@@ -8638,6 +8638,175 @@ class OAIWanTextToImage:
             raise Exception(f"处理图像失败: {str(e)}")
 
 
+class OAIImagePromptReverse:
+    """OAI 图像提示词反推节点"""
+    
+    def __init__(self):
+        self.api_url = "https://oaigc.cn/api/v1/task/submit"
+        self.query_url = "https://oaigc.cn/api/v1/task/query"
+        self.upload_url = "https://oaigc.cn/api/file/tool/upload"
+        
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "api_key": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "请输入您的API密钥"
+                }),
+                "image": ("IMAGE",),
+            }
+        }
+    
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "reverse_prompt"
+    CATEGORY = "OAI"
+    
+    def reverse_prompt(self, api_key, image):
+        """反推图像提示词"""
+        
+        if not api_key or not api_key.strip():
+            raise ValueError("API密钥不能为空，请填写您的API密钥")
+        
+        # 上传图片到OSS
+        print(f"[OAI ImagePromptReverse] 正在上传图片到OSS...")
+        image_url = self._upload_image_to_oss(image)
+        print(f"[OAI ImagePromptReverse] 图片上传成功: {image_url}")
+        
+        # 提交任务
+        print(f"[OAI ImagePromptReverse] 开始提交任务...")
+        task_id = self._submit_task(api_key, image_url)
+        print(f"[OAI ImagePromptReverse] 任务已提交，任务ID: {task_id}")
+        
+        # 轮询查询任务结果，每10秒检查一次，最多30分钟（180次）
+        max_attempts = 180
+        check_interval = 10
+        
+        for attempt in range(max_attempts):
+            print(f"[OAI ImagePromptReverse] 检查任务状态 ({attempt + 1}/{max_attempts})...")
+            time.sleep(check_interval)
+            
+            result = self._query_task(api_key, task_id)
+            
+            if result["status"] == "success":
+                print(f"[OAI ImagePromptReverse] 任务完成！")
+                prompt_result = result["result"]
+                print(f"[OAI ImagePromptReverse] 反推提示词: {prompt_result}")
+                return (prompt_result,)
+            elif result["status"] == "failed":
+                error_msg = result.get('error') or result.get('message') or result.get('error_message') or result.get('fail_reason') or '未知错误'
+                print(f"[OAI ImagePromptReverse] 任务失败详情: {json.dumps(result, ensure_ascii=False)}")
+                
+                if error_msg == '未知错误':
+                    error_msg = '任务失败，可能原因：1) 图片格式不支持 2) API密钥权限不足 3) 账户余额不足 4) 服务端错误'
+                
+                raise Exception(f"任务失败: {error_msg}")
+            else:
+                print(f"[OAI ImagePromptReverse] 任务处理中，状态: {result['status']}")
+        
+        raise TimeoutError(f"任务超时（超过30分钟），任务ID: {task_id}")
+    
+    def _upload_image_to_oss(self, image_tensor):
+        """将图片上传到OSS并返回URL"""
+        try:
+            image_array = (image_tensor[0].cpu().numpy() * 255).astype(np.uint8)
+            image = Image.fromarray(image_array)
+            
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            buffered.seek(0)
+            img_bytes = buffered.getvalue()
+            
+            files = {'file': ('image.png', img_bytes, 'image/png')}
+            response = requests.post(self.upload_url, files=files, timeout=60)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get("code") == 200 or data.get("success"):
+                data_field = data.get("data")
+                if isinstance(data_field, str):
+                    return data_field
+                elif isinstance(data_field, dict):
+                    image_url = data_field.get("url") or data_field.get("imageUrl")
+                    if image_url:
+                        return image_url
+                
+                image_url = data.get("url") or data.get("imageUrl")
+                if image_url:
+                    return image_url
+                
+                raise Exception(f"OSS响应中未找到图片URL: {data}")
+            else:
+                raise Exception(f"OSS上传失败: {data.get('message', '未知错误')}")
+                
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"OSS上传失败: {str(e)}")
+        except Exception as e:
+            raise Exception(f"图片上传失败: {str(e)}")
+    
+    def _submit_task(self, api_key, image_url):
+        """提交任务"""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "appId": "tuxiangfantui",
+            "parameter": {
+                "image": image_url
+            }
+        }
+        
+        print(f"[OAI ImagePromptReverse] 提交参数: {json.dumps(payload, ensure_ascii=False)}")
+        
+        try:
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            print(f"[OAI ImagePromptReverse] API响应: {json.dumps(data, ensure_ascii=False)}")
+            
+            if data.get("code") != 200:
+                raise Exception(f"API返回错误 (code: {data.get('code')}): {data.get('message', '未知错误')}")
+            
+            if "data" not in data:
+                raise Exception(f"API返回数据格式错误，缺少data字段: {data}")
+            
+            if "task_id" not in data["data"] and "taskId" not in data["data"]:
+                raise Exception(f"API返回数据格式错误，缺少taskId字段: {data['data']}")
+            
+            task_id = data["data"].get("taskId") or data["data"].get("task_id")
+            return task_id
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"提交任务失败: {str(e)}")
+    
+    def _query_task(self, api_key, task_id):
+        """查询任务状态"""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.get(f"{self.query_url}/{task_id}", headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get("code") != 200:
+                raise Exception(f"查询任务失败: {data.get('message', '未知错误')}")
+            
+            return data["data"]
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"查询任务失败: {str(e)}")
+
+
 class LoadVideoFromURL:
     """从URL加载视频节点
     
@@ -8851,6 +9020,7 @@ NODE_CLASS_MAPPINGS = {
     "OAIDoubao40": OAIDoubao40,
     "OAIWanwuhuanbeijing": OAIWanwuhuanbeijing,
     "OAIWanTextToImage": OAIWanTextToImage,
+    "OAIImagePromptReverse": OAIImagePromptReverse,
     "LoadVideoFromURL": LoadVideoFromURL
 }
 
@@ -8897,5 +9067,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "OAIDoubao40": "OAI-doubao4.0",
     "OAIWanwuhuanbeijing": "OAI-万物换背景",
     "OAIWanTextToImage": "OAI-Wan2.2文生图",
+    "OAIImagePromptReverse": "OAI-图像提示词反推",
     "LoadVideoFromURL": "OAI-加载视频URL"
 }
