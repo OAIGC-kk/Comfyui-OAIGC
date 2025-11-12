@@ -1546,8 +1546,6 @@ class OAIQwenEdit:
                     "placeholder": "请输入您的API密钥"
                 }),
                 "image1": ("IMAGE",),
-                "image2": ("IMAGE",),
-                "image3": ("IMAGE",),
                 "prompt": ("STRING", {
                     "default": "",
                     "multiline": True,
@@ -1562,6 +1560,10 @@ class OAIQwenEdit:
                 "aspect_ratio": (["1:1", "16:9", "9:16", "4:3", "3:4"], {
                     "default": "9:16"
                 }),
+            },
+            "optional": {
+                "image2": ("IMAGE",),
+                "image3": ("IMAGE",),
             }
         }
     
@@ -1570,7 +1572,7 @@ class OAIQwenEdit:
     FUNCTION = "process_image"
     CATEGORY = "OAI"
     
-    def process_image(self, api_key, image1, image2, image3, prompt, batch_size, aspect_ratio):
+    def process_image(self, api_key, image1, prompt, batch_size, aspect_ratio, image2=None, image3=None):
         """处理图像"""
         
         if not api_key or not api_key.strip():
@@ -1579,18 +1581,24 @@ class OAIQwenEdit:
         if not prompt or not prompt.strip():
             raise ValueError("编辑提示词不能为空，请输入编辑提示词")
         
-        # 上传三张图片到OSS
+        # 上传第一张图片到OSS（必须）
         print(f"[OAI QwenEdit] 正在上传图片1到OSS...")
         image1_url = self._upload_image_to_oss(image1)
         print(f"[OAI QwenEdit] 图片1上传成功: {image1_url}")
         
-        print(f"[OAI QwenEdit] 正在上传图片2到OSS...")
-        image2_url = self._upload_image_to_oss(image2)
-        print(f"[OAI QwenEdit] 图片2上传成功: {image2_url}")
+        # 上传第二张图片到OSS（可选）
+        image2_url = None
+        if image2 is not None:
+            print(f"[OAI QwenEdit] 正在上传图片2到OSS...")
+            image2_url = self._upload_image_to_oss(image2)
+            print(f"[OAI QwenEdit] 图片2上传成功: {image2_url}")
         
-        print(f"[OAI QwenEdit] 正在上传图片3到OSS...")
-        image3_url = self._upload_image_to_oss(image3)
-        print(f"[OAI QwenEdit] 图片3上传成功: {image3_url}")
+        # 上传第三张图片到OSS（可选）
+        image3_url = None
+        if image3 is not None:
+            print(f"[OAI QwenEdit] 正在上传图片3到OSS...")
+            image3_url = self._upload_image_to_oss(image3)
+            print(f"[OAI QwenEdit] 图片3上传成功: {image3_url}")
         
         # 提交任务
         print(f"[OAI QwenEdit] 开始提交任务...")
@@ -1670,16 +1678,23 @@ class OAIQwenEdit:
             "Content-Type": "application/json"
         }
         
+        # 构建参数，只包含有值的图片
+        parameter = {
+            "image1": image1_url,
+            "prompt": prompt,
+            "batch_size": str(batch_size),
+            "aspect_ratio": aspect_ratio
+        }
+        
+        # 只在图片存在时添加到参数中
+        if image2_url:
+            parameter["image2"] = image2_url
+        if image3_url:
+            parameter["image3"] = image3_url
+        
         payload = {
             "appId": "qwenedit",
-            "parameter": {
-                "image1": image1_url,
-                "image2": image2_url,
-                "image3": image3_url,
-                "prompt": prompt,
-                "batch_size": str(batch_size),
-                "aspect_ratio": aspect_ratio
-            }
+            "parameter": parameter
         }
         
         print(f"[OAI QwenEdit] 提交参数: {json.dumps(payload, ensure_ascii=False)}")
