@@ -7005,10 +7005,17 @@ class OAIShouweizhen:
                     "placeholder": "请输入描述词"
                 }),
                 "duration": (["1秒", "2秒", "3秒", "4秒", "5秒", "6秒", "7秒", "8秒", "9秒", "10秒"], {
-                    "default": "1秒"
+                    "default": "1秒",
+                    "display": "duration（时长）"
                 }),
                 "definition": (["标清", "高清"], {
-                    "default": "高清"
+                    "default": "高清",
+                    "display": "definition（清晰度）"
+                }),
+                "seed": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 0xffffffffffffffff
                 }),
             }
         }
@@ -7018,7 +7025,7 @@ class OAIShouweizhen:
     FUNCTION = "generate_video"
     CATEGORY = "OAI"
     
-    def generate_video(self, api_key, image1, image2, prompt, duration, definition):
+    def generate_video(self, api_key, image1, image2, prompt, duration, definition, seed):
         """首尾帧生成视频"""
         
         if not api_key or not api_key.strip():
@@ -7203,7 +7210,8 @@ class OAITushengshipin:
                     "placeholder": "请输入描述词"
                 }),
                 "duration": (["1秒", "2秒", "3秒", "4秒", "5秒", "6秒", "7秒", "8秒", "9秒", "10秒"], {
-                    "default": "1秒"
+                    "default": "1秒",
+                    "display": "duration（时长）"
                 }),
                 "motion_amplitude": ("FLOAT", {
                     "default": 1.0,
@@ -7212,7 +7220,13 @@ class OAITushengshipin:
                     "step": 0.01
                 }),
                 "definition": (["标清", "高清"], {
-                    "default": "高清"
+                    "default": "高清",
+                    "display": "definition（清晰度）"
+                }),
+                "seed": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 0xffffffffffffffff
                 }),
             }
         }
@@ -7222,7 +7236,7 @@ class OAITushengshipin:
     FUNCTION = "generate_video"
     CATEGORY = "OAI"
     
-    def generate_video(self, api_key, image, prompt, duration, motion_amplitude, definition):
+    def generate_video(self, api_key, image, prompt, duration, motion_amplitude, definition, seed):
         """图生视频"""
         
         if not api_key or not api_key.strip():
@@ -8900,10 +8914,17 @@ class OAIDuotushipin:
                     "placeholder": "请输入提示词"
                 }),
                 "duration": (["1秒", "2秒", "3秒", "4秒", "5秒", "6秒", "7秒", "8秒", "9秒", "10秒"], {
-                    "default": "1秒"
+                    "default": "1秒",
+                    "display": "duration（时长）"
                 }),
                 "definition": (["标清", "高清"], {
-                    "default": "高清"
+                    "default": "高清",
+                    "display": "definition（清晰度）"
+                }),
+                "seed": ("INT", {
+                    "default": 0,
+                    "min": 0,
+                    "max": 0xffffffffffffffff
                 }),
             }
         }
@@ -8913,7 +8934,7 @@ class OAIDuotushipin:
     FUNCTION = "generate_video"
     CATEGORY = "OAI"
     
-    def generate_video(self, api_key, image1, image2, image3, prompt, duration, definition):
+    def generate_video(self, api_key, image1, image2, image3, prompt, duration, definition, seed):
         """多图生成视频"""
         
         if not api_key or not api_key.strip():
@@ -9354,6 +9375,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "OAIWanwuhuanbeijing": "OAI-万物换背景",
     "OAIWanTextToImage": "OAI-Wan2.2文生图",
     "OAIImagePromptReverse": "OAI-图像提示词反推",
-    "OAIDuotushipin": "OAI-多图生视频",
+    "OAIDuotushipin": "OAI-首中尾视频",
     "LoadVideoFromURL": "OAI-加载视频URL"
 }
