@@ -7007,15 +7007,18 @@ class OAIShouweizhen:
                 "duration": (["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], {
                     "default": "1"
                 }),
+                "definition": (["标清", "高清"], {
+                    "default": "高清"
+                }),
             }
         }
     
-    RETURN_TYPES = ("IMAGE", "INT", "STRING")
-    RETURN_NAMES = ("frames", "frame_count", "video_info")
+    RETURN_TYPES = ("IMAGE", "INT", "STRING", "AUDIO")
+    RETURN_NAMES = ("frames", "frame_count", "video_info", "audio")
     FUNCTION = "generate_video"
     CATEGORY = "OAI"
     
-    def generate_video(self, api_key, image1, image2, prompt, duration):
+    def generate_video(self, api_key, image1, image2, prompt, duration, definition):
         """首尾帧生成视频"""
         
         if not api_key or not api_key.strip():
@@ -7036,7 +7039,7 @@ class OAIShouweizhen:
         
         # 提交任务
         print(f"[OAI Shouweizhen] 开始提交任务...")
-        task_id = self._submit_task(api_key, image1_url, image2_url, prompt, duration)
+        task_id = self._submit_task(api_key, image1_url, image2_url, prompt, duration, definition)
         print(f"[OAI Shouweizhen] 任务已提交，任务ID: {task_id}")
         
         # 轮询查询任务结果，每10秒检查一次，最多30分钟（180次）
@@ -7106,12 +7109,15 @@ class OAIShouweizhen:
         except Exception as e:
             raise Exception(f"图片上传失败: {str(e)}")
     
-    def _submit_task(self, api_key, image1_url, image2_url, prompt, duration):
+    def _submit_task(self, api_key, image1_url, image2_url, prompt, duration, definition):
         """提交任务"""
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        
+        # 将中文清晰度转换为数字
+        definition_value = "1" if definition == "标清" else "2"
         
         payload = {
             "appId": "shouweizhen",
@@ -7119,7 +7125,8 @@ class OAIShouweizhen:
                 "image1": image1_url,
                 "image2": image2_url,
                 "prompt": prompt,
-                "duration": duration
+                "duration": duration,
+                "definition": definition_value
             }
         }
         
@@ -7195,15 +7202,24 @@ class OAITushengshipin:
                 "duration": (["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], {
                     "default": "1"
                 }),
+                "motion_amplitude": ("FLOAT", {
+                    "default": 1.0,
+                    "min": 1.0,
+                    "max": 1.35,
+                    "step": 0.01
+                }),
+                "definition": (["标清", "高清"], {
+                    "default": "高清"
+                }),
             }
         }
     
-    RETURN_TYPES = ("IMAGE", "INT", "STRING")
-    RETURN_NAMES = ("frames", "frame_count", "video_info")
+    RETURN_TYPES = ("IMAGE", "INT", "STRING", "AUDIO")
+    RETURN_NAMES = ("frames", "frame_count", "video_info", "audio")
     FUNCTION = "generate_video"
     CATEGORY = "OAI"
     
-    def generate_video(self, api_key, image, prompt, duration):
+    def generate_video(self, api_key, image, prompt, duration, motion_amplitude, definition):
         """图生视频"""
         
         if not api_key or not api_key.strip():
@@ -7219,7 +7235,7 @@ class OAITushengshipin:
         
         # 提交任务
         print(f"[OAI Tushengshipin] 开始提交任务...")
-        task_id = self._submit_task(api_key, image_url, prompt, duration)
+        task_id = self._submit_task(api_key, image_url, prompt, duration, motion_amplitude, definition)
         print(f"[OAI Tushengshipin] 任务已提交，任务ID: {task_id}")
         
         # 轮询查询任务结果，每10秒检查一次，最多30分钟（180次）
@@ -7289,19 +7305,27 @@ class OAITushengshipin:
         except Exception as e:
             raise Exception(f"图片上传失败: {str(e)}")
     
-    def _submit_task(self, api_key, image_url, prompt, duration):
+    def _submit_task(self, api_key, image_url, prompt, duration, motion_amplitude, definition):
         """提交任务"""
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
         
+        # 将中文清晰度转换为数字
+        definition_value = "1" if definition == "标清" else "2"
+        
+        # 将动作速度转换为字符串
+        motion_amplitude_str = str(motion_amplitude)
+        
         payload = {
             "appId": "tushengshipin",
             "parameter": {
                 "image": image_url,
                 "prompt": prompt,
-                "duration": duration
+                "duration": duration,
+                "motion_amplitude": motion_amplitude_str,
+                "definition": definition_value
             }
         }
         
@@ -8844,6 +8868,221 @@ class OAIImagePromptReverse:
             raise Exception(f"查询任务失败: {str(e)}")
 
 
+class OAIDuotushipin:
+    """OAI 多图生视频节点（首中尾视频）"""
+    
+    def __init__(self):
+        self.api_url = "https://oaigc.cn/api/v1/task/submit"
+        self.query_url = "https://oaigc.cn/api/v1/task/query"
+        self.upload_url = "https://oaigc.cn/api/file/tool/uploadNodeFile"
+        
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "api_key": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "请输入您的API密钥"
+                }),
+                "image1": ("IMAGE",),
+                "image2": ("IMAGE",),
+                "image3": ("IMAGE",),
+                "prompt": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "placeholder": "请输入提示词"
+                }),
+                "duration": (["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], {
+                    "default": "1"
+                }),
+                "definition": (["标清", "高清"], {
+                    "default": "高清"
+                }),
+            }
+        }
+    
+    RETURN_TYPES = ("IMAGE", "INT", "STRING", "AUDIO")
+    RETURN_NAMES = ("frames", "frame_count", "video_info", "audio")
+    FUNCTION = "generate_video"
+    CATEGORY = "OAI"
+    
+    def generate_video(self, api_key, image1, image2, image3, prompt, duration, definition):
+        """多图生成视频"""
+        
+        if not api_key or not api_key.strip():
+            raise ValueError("API密钥不能为空，请填写您的API密钥")
+        
+        if not prompt or not prompt.strip():
+            raise ValueError("提示词不能为空，请填写提示词")
+        
+        # 上传三张图片到OSS
+        print(f"[OAI Duotushipin] 正在上传首帧图片到OSS...")
+        image1_url = self._upload_image_to_oss(image1)
+        print(f"[OAI Duotushipin] 首帧图片上传成功: {image1_url}")
+        
+        print(f"[OAI Duotushipin] 正在上传中帧图片到OSS...")
+        image2_url = self._upload_image_to_oss(image2)
+        print(f"[OAI Duotushipin] 中帧图片上传成功: {image2_url}")
+        
+        print(f"[OAI Duotushipin] 正在上传尾帧图片到OSS...")
+        image3_url = self._upload_image_to_oss(image3)
+        print(f"[OAI Duotushipin] 尾帧图片上传成功: {image3_url}")
+        
+        # 提交任务
+        print(f"[OAI Duotushipin] 开始提交任务...")
+        task_id = self._submit_task(api_key, image1_url, image2_url, image3_url, prompt, duration, definition)
+        print(f"[OAI Duotushipin] 任务已提交，任务ID: {task_id}")
+        
+        # 轮询查询任务结果，每10秒检查一次，最多30分钟（180次）
+        max_attempts = 180
+        check_interval = 10
+        
+        for attempt in range(max_attempts):
+            print(f"[OAI Duotushipin] 检查任务状态 ({attempt + 1}/{max_attempts})...")
+            time.sleep(check_interval)
+            
+            result = self._query_task(api_key, task_id)
+            
+            if result["status"] == "success":
+                print(f"[OAI Duotushipin] 任务完成！")
+                result_video_url = result["result"]
+                print(f"[OAI Duotushipin] 视频URL: {result_video_url}")
+                return process_video_from_url(result_video_url, "OAI Duotushipin")
+            elif result["status"] == "failed":
+                error_msg = result.get('error') or result.get('message') or result.get('error_message') or result.get('fail_reason') or '未知错误'
+                print(f"[OAI Duotushipin] 任务失败详情: {json.dumps(result, ensure_ascii=False)}")
+                
+                if error_msg == '未知错误':
+                    error_msg = '任务失败，可能原因：1) 图片格式不支持 2) API密钥权限不足 3) 账户余额不足 4) 服务端错误'
+                
+                raise Exception(f"任务失败: {error_msg}")
+            else:
+                print(f"[OAI Duotushipin] 任务处理中，状态: {result['status']}")
+        
+        raise TimeoutError(f"任务超时（超过30分钟），任务ID: {task_id}")
+    
+    def _upload_image_to_oss(self, image_tensor):
+        """将图片上传到OSS并返回URL（带重试机制）"""
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                image_array = (image_tensor[0].cpu().numpy() * 255).astype(np.uint8)
+                image = Image.fromarray(image_array)
+                
+                buffered = io.BytesIO()
+                image.save(buffered, format="PNG")
+                buffered.seek(0)
+                img_bytes = buffered.getvalue()
+                
+                files = {'file': ('image.png', img_bytes, 'image/png')}
+                
+                print(f"[OAI Duotushipin] 尝试上传图片 (第 {attempt + 1}/{max_retries} 次)...")
+                response = requests.post(self.upload_url, files=files, timeout=60)
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                if data.get("code") == 200 or data.get("success"):
+                    data_field = data.get("data")
+                    if isinstance(data_field, str):
+                        return data_field
+                    elif isinstance(data_field, dict):
+                        image_url = data_field.get("url") or data_field.get("imageUrl")
+                        if image_url:
+                            return image_url
+                    
+                    image_url = data.get("url") or data.get("imageUrl")
+                    if image_url:
+                        return image_url
+                    
+                    raise Exception(f"OSS响应中未找到图片URL: {data}")
+                else:
+                    raise Exception(f"OSS上传失败: {data.get('message', '未知错误')}")
+                    
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+                if attempt < max_retries - 1:
+                    print(f"[OAI Duotushipin] SSL/连接错误，{retry_delay}秒后重试... 错误: {str(e)}")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数退避
+                    continue
+                else:
+                    raise Exception(f"OSS上传失败（已重试{max_retries}次）: {str(e)}")
+            except requests.exceptions.RequestException as e:
+                raise Exception(f"OSS上传失败: {str(e)}")
+            except Exception as e:
+                raise Exception(f"图片上传失败: {str(e)}")
+    
+    def _submit_task(self, api_key, image1_url, image2_url, image3_url, prompt, duration, definition):
+        """提交任务"""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # 将中文清晰度转换为数字
+        definition_value = "1" if definition == "标清" else "2"
+        
+        payload = {
+            "appId": "duotushipin",
+            "parameter": {
+                "image1": image1_url,
+                "image2": image2_url,
+                "image3": image3_url,
+                "prompt": prompt,
+                "duration": duration,
+                "definition": definition_value
+            }
+        }
+        
+        print(f"[OAI Duotushipin] 提交参数: {json.dumps(payload, ensure_ascii=False)}")
+        
+        try:
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            print(f"[OAI Duotushipin] API响应: {json.dumps(data, ensure_ascii=False)}")
+            
+            if data.get("code") != 200:
+                raise Exception(f"API返回错误 (code: {data.get('code')}): {data.get('message', '未知错误')}")
+            
+            if "data" not in data:
+                raise Exception(f"API返回数据格式错误，缺少data字段: {data}")
+            
+            if "task_id" not in data["data"] and "taskId" not in data["data"]:
+                raise Exception(f"API返回数据格式错误，缺少taskId字段: {data['data']}")
+            
+            task_id = data["data"].get("taskId") or data["data"].get("task_id")
+            return task_id
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"提交任务失败: {str(e)}")
+    
+    def _query_task(self, api_key, task_id):
+        """查询任务状态"""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.get(f"{self.query_url}/{task_id}", headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get("code") != 200:
+                raise Exception(f"查询任务失败: {data.get('message', '未知错误')}")
+            
+            return data["data"]
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"查询任务失败: {str(e)}")
+
+
 class LoadVideoFromURL:
     """从URL加载视频节点
     
@@ -9058,6 +9297,7 @@ NODE_CLASS_MAPPINGS = {
     "OAIWanwuhuanbeijing": OAIWanwuhuanbeijing,
     "OAIWanTextToImage": OAIWanTextToImage,
     "OAIImagePromptReverse": OAIImagePromptReverse,
+    "OAIDuotushipin": OAIDuotushipin,
     "LoadVideoFromURL": LoadVideoFromURL
 }
 
@@ -9105,5 +9345,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "OAIWanwuhuanbeijing": "OAI-万物换背景",
     "OAIWanTextToImage": "OAI-Wan2.2文生图",
     "OAIImagePromptReverse": "OAI-图像提示词反推",
+    "OAIDuotushipin": "OAI-多图生视频",
     "LoadVideoFromURL": "OAI-加载视频URL"
 }
