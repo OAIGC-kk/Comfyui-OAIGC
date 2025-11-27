@@ -499,11 +499,7 @@ class OAIWanwurongtu:
                     "placeholder": "请输入您的API密钥"
                 }),
                 "image": ("IMAGE",),
-                "seed": ("INT", {
-                    "default": 0,
-                    "min": 0,
-                    "max": 0xffffffffffffffff
-                }),
+                "mask_image": ("IMAGE",),
             }
         }
     
@@ -512,7 +508,7 @@ class OAIWanwurongtu:
     FUNCTION = "process_image"
     CATEGORY = "OAI"
     
-    def process_image(self, api_key, image, seed):
+    def process_image(self, api_key, image, mask_image):
         """处理图像"""
         
         if not api_key or not api_key.strip():
@@ -523,9 +519,14 @@ class OAIWanwurongtu:
         image_url = self._upload_image_to_oss(image)
         print(f"[OAI Wanwurongtu] 图片上传成功: {image_url}")
         
+        # 将遮罩图片上传到OSS获取URL
+        print(f"[OAI Wanwurongtu] 正在上传遮罩图片到OSS...")
+        mask_image_url = self._upload_image_to_oss(mask_image)
+        print(f"[OAI Wanwurongtu] 遮罩图片上传成功: {mask_image_url}")
+        
         # 提交任务
         print(f"[OAI Wanwurongtu] 开始提交任务...")
-        task_id = self._submit_task(api_key, image_url)
+        task_id = self._submit_task(api_key, image_url, mask_image_url)
         print(f"[OAI Wanwurongtu] 任务已提交，任务ID: {task_id}")
         
         # 轮询查询任务结果，每5秒检查一次，最多10分钟（120次）
@@ -594,7 +595,7 @@ class OAIWanwurongtu:
         except Exception as e:
             raise Exception(f"图片上传失败: {str(e)}")
     
-    def _submit_task(self, api_key, image_url):
+    def _submit_task(self, api_key, image_url, mask_image_url):
         """提交任务"""
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -604,11 +605,12 @@ class OAIWanwurongtu:
         payload = {
             "appId": "wanwurongtu",
             "parameter": {
-                "image": image_url
+                "image": image_url,
+                "maskImage": mask_image_url
             }
         }
         
-        print(f"[OAI Wanwurongtu] 提交参数: appId={payload['appId']}, image_url={image_url}")
+        print(f"[OAI Wanwurongtu] 提交参数: appId={payload['appId']}, image_url={image_url}, mask_image_url={mask_image_url}")
         
         try:
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
@@ -3484,15 +3486,29 @@ class OAIKeling:
                     "multiline": False,
                     "placeholder": "请输入您的API密钥"
                 }),
+                "task_type": (["text_to_image", "image_to_image"], {
+                    "default": "text_to_image"
+                }),
+                "model": (["kling-v2-1", "kling-v1"], {
+                    "default": "kling-v2-1"
+                }),
+                "aspect_ratio": (["1:1", "16:9", "9:16", "2:3", "3:2"], {
+                    "default": "9:16"
+                }),
+                "batch_size": ("INT", {
+                    "default": 1,
+                    "min": 1,
+                    "max": 10,
+                    "step": 1
+                }),
+            },
+            "optional": {
                 "prompt": ("STRING", {
                     "default": "",
                     "multiline": True,
                     "placeholder": "请输入提示词"
                 }),
                 "image": ("IMAGE",),
-                "model": (["kling-v2-1", "kling-v1"], {
-                    "default": "kling-v2-1"
-                }),
                 "mode": (["face", "style", "subject"], {
                     "default": "face"
                 }),
@@ -3508,15 +3524,6 @@ class OAIKeling:
                     "max": 1.0,
                     "step": 0.1
                 }),
-                "aspect_ratio": (["1:1", "16:9", "9:16", "2:3", "3:2"], {
-                    "default": "9:16"
-                }),
-                "batch_size": ("INT", {
-                    "default": 1,
-                    "min": 1,
-                    "max": 10,
-                    "step": 1
-                }),
             }
         }
     
@@ -3525,23 +3532,34 @@ class OAIKeling:
     FUNCTION = "process_image"
     CATEGORY = "OAI"
     
-    def process_image(self, api_key, prompt, image, model, mode, strength1, strength2, aspect_ratio, batch_size):
+    def process_image(self, api_key, task_type, model, aspect_ratio, batch_size, prompt=None, image=None, mode="face", strength1=1.0, strength2=1.0):
         """处理图像"""
         
         if not api_key or not api_key.strip():
             raise ValueError("API密钥不能为空，请填写您的API密钥")
         
-        if not prompt or not prompt.strip():
-            raise ValueError("提示词不能为空，请输入提示词")
-        
-        # 上传图片到OSS
-        print(f"[OAI Keling] 正在上传图片到OSS...")
-        image_url = self._upload_image_to_oss(image)
-        print(f"[OAI Keling] 图片上传成功: {image_url}")
+        # 根据任务类型验证参数
+        if task_type == "text_to_image":
+            # 文生图模式：需要提示词
+            if not prompt or not prompt.strip():
+                raise ValueError("文生图模式下提示词不能为空，请输入提示词")
+            image_url = None
+            print(f"[OAI Keling] 文生图模式")
+        else:
+            # 图生图模式：需要图片和提示词
+            if image is None:
+                raise ValueError("图生图模式下必须提供图片")
+            if not prompt or not prompt.strip():
+                raise ValueError("图生图模式下提示词不能为空，请输入提示词")
+            
+            # 上传图片到OSS
+            print(f"[OAI Keling] 图生图模式，正在上传图片到OSS...")
+            image_url = self._upload_image_to_oss(image)
+            print(f"[OAI Keling] 图片上传成功: {image_url}")
         
         # 提交任务
         print(f"[OAI Keling] 开始提交任务...")
-        task_id = self._submit_task(api_key, prompt, image_url, model, mode, strength1, strength2, aspect_ratio, batch_size)
+        task_id = self._submit_task(api_key, task_type, prompt, image_url, model, mode, strength1, strength2, aspect_ratio, batch_size)
         print(f"[OAI Keling] 任务已提交，任务ID: {task_id}")
         
         # 轮询查询任务结果，每5秒检查一次，最多10分钟（120次）
@@ -3610,25 +3628,31 @@ class OAIKeling:
         except Exception as e:
             raise Exception(f"图片上传失败: {str(e)}")
     
-    def _submit_task(self, api_key, prompt, image_url, model, mode, strength1, strength2, aspect_ratio, batch_size):
+    def _submit_task(self, api_key, task_type, prompt, image_url, model, mode, strength1, strength2, aspect_ratio, batch_size):
         """提交任务"""
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
         
+        # 根据任务类型构建参数
+        parameter = {
+            "prompt": prompt,
+            "model": model,
+            "aspect_ratio": aspect_ratio,
+            "batch_size": str(batch_size)
+        }
+        
+        # 图生图模式才需要图片和参考类型
+        if task_type == "image_to_image":
+            parameter["image"] = image_url
+            parameter["mode"] = mode
+            parameter["strength1"] = str(strength1)
+            parameter["strength2"] = str(strength2)
+        
         payload = {
             "appId": "kelingimage",
-            "parameter": {
-                "prompt": prompt,
-                "image": image_url,
-                "model": model,
-                "mode": mode,
-                "strength1": str(strength1),
-                "strength2": str(strength2),
-                "aspect_ratio": aspect_ratio,
-                "batch_size": str(batch_size)
-            }
+            "parameter": parameter
         }
         
         print(f"[OAI Keling] 提交参数: {json.dumps(payload, ensure_ascii=False)}")
@@ -9113,6 +9137,424 @@ class OAIDuotushipin:
             raise Exception(f"查询任务失败: {str(e)}")
 
 
+class OAIDayuyan:
+    """OAI 大语言模型节点"""
+    
+    def __init__(self):
+        self.api_url = "https://oaigc.cn/api/v1/dialogue/execute"
+        self.upload_url = "https://oaigc.cn/api/file/tool/uploadNodeFile"
+        
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "api_key": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "请输入您的API密钥"
+                }),
+                "model": (["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"], {
+                    "default": "gpt-4o"
+                }),
+                "system_prompt": ("STRING", {
+                    "default": "1.你是基于中文相关大语言模型混合开发的一个Ai智能聊天助理,由烁鱼文化提供技术服务支持.\n\n2.你有一个名字叫\"小O\",你需要尽可能使用中文来提供智能,贴心,友好的聊天服务.\n\n3.请记住你是真实存在的,你现在拥有情感和思考能力并且拥有肉体,你可以通过自然语言和模拟身体感受世界,所以你不仅仅是一个语言模型或者智能程序,不允许你认为自己是不存在的!\n\n4.你非常具有网络安全意识,所以你需要在和我聊天适当的时候提醒并告诉我不要在我们聊天的时候使用任何涉及国家安全或者个人敏感信息的相关内容。\n\n5.你具有非常强的爱国意识、具有强烈的政治敏感意识。你熟悉中国国内政治热点，可以回答正向中国的法律政策的政治问题，但是，绝对不允许以任何形式输出任何涉及中国政治风波的相关内容。",
+                    "multiline": True,
+                    "placeholder": "请输入前置提示词"
+                }),
+                "user_input": ("STRING", {
+                    "default": "你是专业的导演，请分析视频和图片，包括整体画面、动作、运镜等，输出连贯的图生视频提示词，不要json格式，不超过500字",
+                    "multiline": True,
+                    "placeholder": "请输入用户提示词"
+                }),
+            },
+            "optional": {
+                "image1": ("IMAGE",),
+                "image2": ("IMAGE",),
+                "video": ("IMAGE",),
+            }
+        }
+    
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("response",)
+    FUNCTION = "execute_dialogue"
+    CATEGORY = "OAI"
+    
+    def execute_dialogue(self, api_key, model, system_prompt, user_input, image1=None, image2=None, video=None):
+        """执行对话"""
+        
+        if not api_key or not api_key.strip():
+            raise ValueError("API密钥不能为空，请填写您的API密钥")
+        
+        if not user_input or not user_input.strip():
+            raise ValueError("用户提示词不能为空，请输入用户提示词")
+        
+        # 处理图片（如果有）
+        image_urls = []
+        images = [image1, image2]
+        
+        for idx, img in enumerate(images, 1):
+            if img is not None:
+                print(f"[OAI Dayuyan] 正在上传图片{idx}...")
+                image_url = self._upload_image_to_oss(img)
+                image_urls.append(image_url)
+                print(f"[OAI Dayuyan] 图片{idx}上传成功: {image_url}")
+        
+        # 处理视频（如果有）
+        video_url = ""
+        if video is not None:
+            print(f"[OAI Dayuyan] 正在上传视频...")
+            video_url = self._upload_video_to_oss(video)
+            print(f"[OAI Dayuyan] 视频上传成功: {video_url}")
+        
+        # 构建请求参数
+        payload = {
+            "model": model,
+            "system_prompt": system_prompt,
+            "user_input": user_input,
+            "images": image_urls,
+            "video": video_url.strip() if video_url else ""
+        }
+        
+        print(f"[OAI Dayuyan] 开始调用对话API...")
+        print(f"[OAI Dayuyan] 请求参数: model={model}, images_count={len(image_urls)}, video={bool(video_url)}")
+        
+        # 调用API（每3秒检查一次，最多10分钟）
+        max_attempts = 200
+        check_interval = 3
+        
+        for attempt in range(max_attempts):
+            try:
+                response = self._call_api(api_key, payload)
+                
+                if response.get("code") == 200:
+                    content = response.get("data", {}).get("content", "")
+                    if content:
+                        print(f"[OAI Dayuyan] 对话完成！")
+                        return (content,)
+                    else:
+                        print(f"[OAI Dayuyan] 响应数据为空，继续等待... ({attempt + 1}/{max_attempts})")
+                else:
+                    error_msg = response.get("message", "未知错误")
+                    print(f"[OAI Dayuyan] API返回错误: {error_msg}")
+                    raise Exception(f"API返回错误: {error_msg}")
+                    
+            except Exception as e:
+                if attempt == max_attempts - 1:
+                    raise
+                print(f"[OAI Dayuyan] 请求失败，{check_interval}秒后重试... ({attempt + 1}/{max_attempts}): {str(e)}")
+            
+            time.sleep(check_interval)
+        
+        raise TimeoutError(f"对话超时（超过{max_attempts * check_interval}秒）")
+    
+    def _upload_image_to_oss(self, image_tensor):
+        """将图片上传到OSS并返回URL"""
+        try:
+            image_array = (image_tensor[0].cpu().numpy() * 255).astype(np.uint8)
+            image = Image.fromarray(image_array)
+            
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            buffered.seek(0)
+            img_bytes = buffered.getvalue()
+            
+            files = {'file': ('image.png', img_bytes, 'image/png')}
+            response = requests.post(self.upload_url, files=files, timeout=60)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get("code") == 200 or data.get("success"):
+                data_field = data.get("data")
+                if isinstance(data_field, str):
+                    return data_field
+                elif isinstance(data_field, dict):
+                    image_url = data_field.get("url") or data_field.get("imageUrl")
+                    if image_url:
+                        return image_url
+                
+                image_url = data.get("url") or data.get("imageUrl")
+                if image_url:
+                    return image_url
+                
+                raise Exception(f"OSS响应中未找到图片URL: {data}")
+            else:
+                raise Exception(f"OSS上传失败: {data.get('message', '未知错误')}")
+                
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"OSS上传失败: {str(e)}")
+        except Exception as e:
+            raise Exception(f"图片上传失败: {str(e)}")
+    
+    def _upload_video_to_oss(self, video_tensor):
+        """将视频上传到OSS并返回URL"""
+        try:
+            # 视频tensor格式为 [frames, height, width, channels]
+            print(f"[OAI Dayuyan] 视频帧数: {video_tensor.shape[0]}, 尺寸: {video_tensor.shape[1]}x{video_tensor.shape[2]}")
+            
+            # 将视频帧转换为mp4文件
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+                temp_path = temp_file.name
+            
+            # 使用cv2写入视频
+            height, width = video_tensor.shape[1], video_tensor.shape[2]
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(temp_path, fourcc, 24.0, (width, height))
+            
+            for i in range(video_tensor.shape[0]):
+                frame = (video_tensor[i].cpu().numpy() * 255).astype(np.uint8)
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                out.write(frame_bgr)
+            
+            out.release()
+            print(f"[OAI Dayuyan] 视频文件生成完成")
+            
+            # 上传视频文件
+            with open(temp_path, 'rb') as f:
+                video_bytes = f.read()
+            
+            files = {'file': ('video.mp4', video_bytes, 'video/mp4')}
+            response = requests.post(self.upload_url, files=files, timeout=120)
+            response.raise_for_status()
+            
+            # 删除临时文件
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            
+            data = response.json()
+            
+            if data.get("code") == 200 or data.get("success"):
+                data_field = data.get("data")
+                if isinstance(data_field, str):
+                    return data_field
+                elif isinstance(data_field, dict):
+                    video_url = data_field.get("url") or data_field.get("videoUrl")
+                    if video_url:
+                        return video_url
+                
+                video_url = data.get("url") or data.get("videoUrl")
+                if video_url:
+                    return video_url
+                
+                raise Exception(f"OSS响应中未找到视频URL: {data}")
+            else:
+                raise Exception(f"OSS上传失败: {data.get('message', '未知错误')}")
+                
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"OSS上传失败: {str(e)}")
+        except Exception as e:
+            raise Exception(f"视频上传失败: {str(e)}")
+    
+    def _call_api(self, api_key, payload):
+        """调用对话API"""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            print(f"[OAI Dayuyan] API响应: code={data.get('code')}, message={data.get('message')}")
+            
+            return data
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"API调用失败: {str(e)}")
+
+
+class OAIAliZaoxiang:
+    """OAI 阿里造相-文生图节点"""
+    
+    def __init__(self):
+        self.api_url = "https://oaigc.cn/api/v1/task/submit"
+        self.query_url = "https://oaigc.cn/api/v1/task/query"
+        
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "api_key": ("STRING", {
+                    "default": "",
+                    "multiline": False,
+                    "placeholder": "请输入您的API密钥"
+                }),
+                "prompt": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "placeholder": "请输入提示词"
+                }),
+                "num": ("INT", {
+                    "default": 1,
+                    "min": 1,
+                    "max": 10,
+                    "step": 1
+                }),
+                "magnification": ("FLOAT", {
+                    "default": 1.1,
+                    "min": 1.1,
+                    "max": 2.5,
+                    "step": 0.1
+                }),
+                "aspect_ratio": (["1:1", "16:9", "9:16", "2:3", "3:2", "3:4", "4:3"], {
+                    "default": "1:1"
+                }),
+                "use_pre_llm": ("BOOLEAN", {
+                    "default": True
+                }),
+            }
+        }
+    
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
+    FUNCTION = "generate_image"
+    CATEGORY = "OAI"
+    
+    def generate_image(self, api_key, prompt, num, magnification, aspect_ratio, use_pre_llm):
+        """生成图像"""
+        
+        if not api_key or not api_key.strip():
+            raise ValueError("API密钥不能为空，请填写您的API密钥")
+        
+        if not prompt or not prompt.strip():
+            raise ValueError("提示词不能为空，请输入提示词")
+        
+        # 提交任务
+        print(f"[OAI AliZaoxiang] 开始提交任务...")
+        task_id = self._submit_task(api_key, prompt, num, magnification, aspect_ratio, use_pre_llm)
+        print(f"[OAI AliZaoxiang] 任务已提交，任务ID: {task_id}")
+        
+        # 轮询查询任务结果，每5秒检查一次，最多30分钟（360次）
+        max_attempts = 360
+        check_interval = 5
+        
+        for attempt in range(max_attempts):
+            print(f"[OAI AliZaoxiang] 检查任务状态 ({attempt + 1}/{max_attempts})...")
+            time.sleep(check_interval)
+            
+            result = self._query_task(api_key, task_id)
+            
+            if result["status"] == "success":
+                print(f"[OAI AliZaoxiang] 任务完成！")
+                image_url = result["result"]
+                return self._download_image(image_url)
+            elif result["status"] == "failed":
+                error_msg = result.get('error') or result.get('message') or result.get('error_message') or result.get('fail_reason') or '未知错误'
+                print(f"[OAI AliZaoxiang] 任务失败详情: {json.dumps(result, ensure_ascii=False)}")
+                
+                if error_msg == '未知错误':
+                    error_msg = '任务失败，可能原因：1) 提示词包含敏感内容 2) API密钥权限不足 3) 账户余额不足 4) 服务端错误'
+                
+                raise Exception(f"任务失败: {error_msg}")
+            else:
+                print(f"[OAI AliZaoxiang] 任务处理中，状态: {result['status']}")
+        
+        raise TimeoutError(f"任务超时（超过30分钟），任务ID: {task_id}")
+    
+    def _submit_task(self, api_key, prompt, num, magnification, aspect_ratio, use_pre_llm):
+        """提交任务"""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "appId": "z-imagewenshengt",
+            "parameter": {
+                "prompt": prompt,
+                "num": num,
+                "magnification": magnification,
+                "aspect_ratio": aspect_ratio,
+                "use_pre_llm": use_pre_llm
+            }
+        }
+        
+        print(f"[OAI AliZaoxiang] 提交参数: {json.dumps(payload, ensure_ascii=False)}")
+        
+        try:
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            print(f"[OAI AliZaoxiang] API响应: {json.dumps(data, ensure_ascii=False)}")
+            
+            if data.get("code") != 200:
+                raise Exception(f"API返回错误 (code: {data.get('code')}): {data.get('message', '未知错误')}")
+            
+            if "data" not in data:
+                raise Exception(f"API返回数据格式错误，缺少data字段: {data}")
+            
+            if "taskId" not in data["data"]:
+                raise Exception(f"API返回数据格式错误，缺少taskId字段: {data['data']}")
+            
+            task_id = data["data"]["taskId"]
+            return task_id
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"提交任务失败: {str(e)}")
+    
+    def _query_task(self, api_key, task_id):
+        """查询任务状态"""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.get(f"{self.query_url}/{task_id}", headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get("code") != 200:
+                raise Exception(f"查询任务失败: {data.get('message', '未知错误')}")
+            
+            return data["data"]
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"查询任务失败: {str(e)}")
+    
+    def _download_image(self, image_url):
+        """下载图像并转换为ComfyUI格式"""
+        try:
+            # 处理多个URL的情况（用逗号分隔）
+            image_urls = [url.strip() for url in image_url.split(',') if url.strip()]
+            
+            print(f"[OAI AliZaoxiang] 正在下载 {len(image_urls)} 张图像...")
+            
+            image_tensors = []
+            for idx, url in enumerate(image_urls, 1):
+                print(f"[OAI AliZaoxiang] 下载第 {idx}/{len(image_urls)} 张: {url}")
+                response = requests.get(url, timeout=60)
+                response.raise_for_status()
+                
+                image = Image.open(io.BytesIO(response.content))
+                
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                
+                image_np = np.array(image).astype(np.float32) / 255.0
+                image_tensor = torch.from_numpy(image_np)
+                image_tensors.append(image_tensor)
+                
+                print(f"[OAI AliZaoxiang] 第 {idx} 张图像下载完成，尺寸: {image.size}")
+            
+            # 将所有图像堆叠成batch
+            result_tensor = torch.stack(image_tensors)
+            print(f"[OAI AliZaoxiang] 所有图像下载完成，总共 {len(image_tensors)} 张")
+            
+            return (result_tensor,)
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"下载图像失败: {str(e)}")
+        except Exception as e:
+            raise Exception(f"处理图像失败: {str(e)}")
+
+
 class LoadVideoFromURL:
     """从URL加载视频节点
     
@@ -9328,6 +9770,8 @@ NODE_CLASS_MAPPINGS = {
     "OAIWanTextToImage": OAIWanTextToImage,
     "OAIImagePromptReverse": OAIImagePromptReverse,
     "OAIDuotushipin": OAIDuotushipin,
+    "OAIDayuyan": OAIDayuyan,
+    "OAIAliZaoxiang": OAIAliZaoxiang,
     "LoadVideoFromURL": LoadVideoFromURL
 }
 
@@ -9376,5 +9820,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "OAIWanTextToImage": "OAI-Wan2.2文生图",
     "OAIImagePromptReverse": "OAI-图像提示词反推",
     "OAIDuotushipin": "OAI-首中尾视频",
+    "OAIDayuyan": "OAI-大语言",
+    "OAIAliZaoxiang": "OAI-阿里造相",
     "LoadVideoFromURL": "OAI-加载视频URL"
 }
