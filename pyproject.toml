@@ -1,0 +1,9 @@
+[project]
+name = "oai-bridge"
+version = "0.1.0"
+description = "OAI Bridge ComfyUI custom nodes and panel"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.comfy]
+web = "web"

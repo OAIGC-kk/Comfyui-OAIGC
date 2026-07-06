@@ -1,0 +1,677 @@
+﻿import { app } from "../../scripts/app.js";
+
+const TEXT = {
+  panelTitle: "OAI Bridge \u8282\u70b9\u7ba1\u7406",
+  close: "\u5173\u95ed",
+  tokenSection: "API Token",
+  tokenPlaceholder: "\u8bf7\u8f93\u5165 API Token",
+  tokenSaved: "\u5df2\u4fdd\u5b58\uff1a",
+  tokenLink: "\u83b7\u53d6 API Token",
+  saveConfig: "\u4fdd\u5b58 Token",
+  testConnection: "\u6d4b\u8bd5\u8fde\u63a5",
+  refreshApps: "\u5237\u65b0\u5e94\u7528\u5217\u8868",
+  cacheStatus: "\u67e5\u770b\u7f13\u5b58\u72b6\u6001",
+  projectNodes: "\u9879\u76ee\u8282\u70b9",
+  nodeHint: "\u70b9\u51fb\u5361\u7247\u5373\u53ef\u6dfb\u52a0\u5230\u5f53\u524d\u753b\u5e03",
+  noNodes: "\u6682\u65e0\u8282\u70b9\u3002",
+  unnamedNode: "\u672a\u547d\u540d\u8282\u70b9",
+  noDescription: "\u6682\u65e0\u8bf4\u660e\u3002",
+  inputs: "\u8f93\u5165",
+  outputs: "\u8f93\u51fa",
+  none: "\u65e0",
+  configReadFailed: "\u8bfb\u53d6\u914d\u7f6e\u5931\u8d25\u3002",
+  nodesReadFailed: "\u8bfb\u53d6\u9879\u76ee\u8282\u70b9\u5931\u8d25\u3002",
+  configSaved: "Token \u5df2\u4fdd\u5b58\u3002",
+  testDone: "\u6d4b\u8bd5\u5b8c\u6210\u3002",
+  refreshDone: "\u5237\u65b0\u5b8c\u6210\u3002",
+  updatedAt: "\u66f4\u65b0\u65f6\u95f4\uff1a",
+  appCount: "\u5e94\u7528\u6570\u91cf\uff1a",
+  cacheSource: "\u7f13\u5b58\u6765\u6e90\uff1a",
+  unknown: "\u672a\u77e5",
+  addedPrefix: "\u5df2\u6dfb\u52a0\u8282\u70b9\uff1a",
+  addFailed: "\u6dfb\u52a0\u8282\u70b9\u5931\u8d25\uff1a",
+  graphUnavailable: "\u672a\u627e\u5230 ComfyUI \u753b\u5e03\u3002",
+  liteGraphUnavailable: "\u672a\u627e\u5230 LiteGraph \u8282\u70b9\u521b\u5efa\u5668\u3002",
+  nodeUnavailable: "\u672a\u627e\u5230\u8be5\u8282\u70b9\u7c7b\u578b\u3002",
+};
+
+const api = {
+  async get(path) {
+    const res = await fetch(path);
+    return await res.json();
+  },
+  async post(path, body = {}) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return await res.json();
+  },
+};
+
+const IMAGE_NODE_ID = "OAIImageNode";
+const VIDEO_NODE_ID = "OAIVideoNode";
+const IMAGE_FIELD = Object.freeze({
+  model: "\u6a21\u578b",
+  prompt: "\u63d0\u793a\u8bcd",
+  aspect: "\u753b\u9762\u6bd4\u4f8b",
+  count: "\u6570\u91cf",
+  magnification: "\u653e\u5927\u500d\u6570",
+  preLlm: "\u63d0\u793a\u8bcd\u4f18\u5316",
+  bananaModel: "Banana\u6a21\u578b",
+  imageSize: "\u56fe\u50cf\u89c4\u683c",
+  hd: "\u9ad8\u6e05\u6a21\u5f0f",
+  fast: "\u5feb\u901f\u6a21\u5f0f",
+  gptModel: "GPT\u6a21\u578b",
+  resolution: "\u5206\u8fa8\u7387",
+  expandTop: "\u5411\u4e0a\u6269\u5c55",
+  expandBottom: "\u5411\u4e0b\u6269\u5c55",
+  expandLeft: "\u5411\u5de6\u6269\u5c55",
+  expandRight: "\u5411\u53f3\u6269\u5c55",
+  extra: "\u9ad8\u7ea7\u53c2\u6570JSON",
+});
+
+const VIDEO_FIELD = Object.freeze({
+  model: "\u89c6\u9891\u6a21\u578b",
+  prompt: "\u63d0\u793a\u8bcd",
+  aspect: "\u753b\u9762\u6bd4\u4f8b",
+  duration: "\u65f6\u957f",
+  resolution: "\u6e05\u6670\u5ea6",
+  generateAudio: "\u751f\u6210\u97f3\u9891",
+  extra: "\u9ad8\u7ea7\u53c2\u6570JSON",
+});
+
+const ADVANCED_WIDGET_NAMES = new Set([IMAGE_FIELD.extra, VIDEO_FIELD.extra]);
+
+const DEFAULT_IMAGE_MODEL = "\u963f\u91cc\u9020\u76f8-\u6587\u751f\u56fe";
+const BANANA_IMAGE_MODEL = "Banana\u751f\u56fe";
+const ALI_SUPPORTED_ASPECT_RATIOS = new Set(["9:16", "2:3", "1:1", "4:3", "3:2", "16:9"]);
+const DEFAULT_BANANA_MODEL = "banana2";
+const BANANA_MODELS_WITH_HD = new Set(["banana"]);
+const MODEL_VISIBLE_WIDGETS = Object.freeze({
+  [DEFAULT_IMAGE_MODEL]: [
+    IMAGE_FIELD.prompt,
+    IMAGE_FIELD.aspect,
+    IMAGE_FIELD.count,
+    IMAGE_FIELD.magnification,
+    IMAGE_FIELD.preLlm,
+  ],
+  [BANANA_IMAGE_MODEL]: [
+    IMAGE_FIELD.prompt,
+    IMAGE_FIELD.aspect,
+    IMAGE_FIELD.bananaModel,
+    IMAGE_FIELD.imageSize,
+    IMAGE_FIELD.fast,
+  ],
+  ["GPT \u751f\u56fe"]: [
+    IMAGE_FIELD.prompt,
+    IMAGE_FIELD.aspect,
+    IMAGE_FIELD.gptModel,
+    IMAGE_FIELD.fast,
+    IMAGE_FIELD.resolution,
+  ],
+  ["Agnes Image 2.1 Flash"]: [
+    IMAGE_FIELD.prompt,
+    IMAGE_FIELD.aspect,
+    IMAGE_FIELD.count,
+    IMAGE_FIELD.resolution,
+  ],
+  ["AI\u6263\u56fe"]: [],
+  ["AI\u6269\u56fe"]: [
+    IMAGE_FIELD.expandTop,
+    IMAGE_FIELD.expandBottom,
+    IMAGE_FIELD.expandLeft,
+    IMAGE_FIELD.expandRight,
+  ],
+});
+
+const IMAGE_WIDGET_NAMES = new Set([
+  IMAGE_FIELD.model,
+  IMAGE_FIELD.hd,
+  ...ADVANCED_WIDGET_NAMES,
+  ...Object.values(MODEL_VISIBLE_WIDGETS).flat(),
+]);
+
+const DEFAULT_VIDEO_MODEL = "seedance2.0";
+const VIDEO_MODEL_VISIBLE_WIDGETS = Object.freeze({
+  [DEFAULT_VIDEO_MODEL]: [
+    VIDEO_FIELD.prompt,
+    VIDEO_FIELD.aspect,
+    VIDEO_FIELD.duration,
+    VIDEO_FIELD.resolution,
+    VIDEO_FIELD.generateAudio,
+  ],
+  ["seedance2.0-fast"]: [
+    VIDEO_FIELD.prompt,
+    VIDEO_FIELD.aspect,
+    VIDEO_FIELD.duration,
+    VIDEO_FIELD.resolution,
+    VIDEO_FIELD.generateAudio,
+  ],
+});
+
+const VIDEO_WIDGET_NAMES = new Set([
+  VIDEO_FIELD.model,
+  ...ADVANCED_WIDGET_NAMES,
+  ...Object.values(VIDEO_MODEL_VISIBLE_WIDGETS).flat(),
+]);
+
+function getWidgetName(widget) {
+  return widget?.name || widget?.label;
+}
+
+function findWidget(node, name) {
+  return node?.widgets?.find((widget) => getWidgetName(widget) === name);
+}
+
+function getSelectedImageModel(node) {
+  return findWidget(node, IMAGE_FIELD.model)?.value || DEFAULT_IMAGE_MODEL;
+}
+
+function getSelectedBananaModel(node) {
+  return findWidget(node, IMAGE_FIELD.bananaModel)?.value || DEFAULT_BANANA_MODEL;
+}
+
+function inferWidgetType(widget) {
+  const originalType = widget?.__oaiBridgeOriginal?.type;
+  if (originalType && originalType !== "hidden") return originalType;
+  if (Array.isArray(widget?.options?.values)) return "combo";
+  if (typeof widget?.value === "number") return "number";
+  if (typeof widget?.value === "boolean") return "toggle";
+  return "text";
+}
+
+function restoreLegacyHiddenWidget(widget) {
+  if (!widget) return;
+  const original = widget.__oaiBridgeOriginal || {};
+  if (widget.type === "hidden") {
+    widget.type = original.type || inferWidgetType(widget);
+  }
+  if (original.computeSize) {
+    widget.computeSize = original.computeSize;
+  }
+  if (original.draw) {
+    widget.draw = original.draw;
+  }
+  widget.hidden = false;
+  widget.disabled = false;
+  delete widget.__oaiBridgeHidden;
+  delete widget.__oaiBridgeOriginal;
+}
+function showWidget(widget) {
+  if (!widget?.__oaiBridgeHidden) return;
+  const original = widget.__oaiBridgeOriginal || {};
+  if (original.computeSize) {
+    widget.computeSize = original.computeSize;
+  } else {
+    delete widget.computeSize;
+  }
+  if (original.draw) {
+    widget.draw = original.draw;
+  } else {
+    delete widget.draw;
+  }
+  delete widget.__oaiBridgeHidden;
+  delete widget.__oaiBridgeOriginal;
+}
+
+function hideWidget(widget) {
+  if (!widget || widget.__oaiBridgeHidden) return;
+  widget.__oaiBridgeOriginal = {
+    computeSize: widget.computeSize,
+    draw: widget.draw,
+  };
+  widget.hidden = true;
+  widget.disabled = true;
+  widget.computeSize = () => [0, -4];
+  widget.draw = () => {};
+  widget.__oaiBridgeHidden = true;
+}
+function refreshNodeLayout(node) {
+  if (node?.computeSize && node?.setSize) {
+    node.setSize(node.computeSize());
+  }
+  app?.graph?.setDirtyCanvas?.(true, true);
+  app?.canvas?.setDirty?.(true, true);
+}
+
+function hideAdvancedWidgets(node) {
+  if (!node?.widgets) return;
+  for (const widget of node.widgets) {
+    const name = getWidgetName(widget);
+    if (ADVANCED_WIDGET_NAMES.has(name)) hideWidget(widget);
+  }
+  refreshNodeLayout(node);
+}
+
+function normalizeOAIImageWidgetValues(node) {
+  if (getSelectedImageModel(node) !== DEFAULT_IMAGE_MODEL) return;
+  const aspectWidget = findWidget(node, IMAGE_FIELD.aspect);
+  if (aspectWidget && !ALI_SUPPORTED_ASPECT_RATIOS.has(aspectWidget.value)) {
+    aspectWidget.value = "1:1";
+  }
+}
+function updateOAIImageWidgetVisibility(node) {
+  if (!node?.widgets) return;
+  normalizeOAIImageWidgetValues(node);
+  const model = getSelectedImageModel(node);
+  const visible = new Set([IMAGE_FIELD.model, ...(MODEL_VISIBLE_WIDGETS[model] || MODEL_VISIBLE_WIDGETS[DEFAULT_IMAGE_MODEL])]);
+  if (model === BANANA_IMAGE_MODEL && BANANA_MODELS_WITH_HD.has(getSelectedBananaModel(node))) {
+    visible.add(IMAGE_FIELD.hd);
+  }
+
+  for (const widget of node.widgets) {
+    const name = getWidgetName(widget);
+    if (!IMAGE_WIDGET_NAMES.has(name)) continue;
+    if (visible.has(name)) {
+      showWidget(widget);
+    } else {
+      hideWidget(widget);
+    }
+  }
+
+  refreshNodeLayout(node);
+}
+
+function scheduleOAIImageWidgetVisibility(node) {
+  updateOAIImageWidgetVisibility(node);
+  requestAnimationFrame?.(() => updateOAIImageWidgetVisibility(node));
+  setTimeout(() => updateOAIImageWidgetVisibility(node), 0);
+}
+
+function patchOAIImageModelWidget(node) {
+  const modelWidget = findWidget(node, IMAGE_FIELD.model);
+  if (!modelWidget || modelWidget.__oaiBridgePatched) return;
+
+  const originalCallback = modelWidget.callback;
+  modelWidget.callback = function oaiBridgeModelCallback(value, ...args) {
+    const result = originalCallback?.apply(this, [value, ...args]);
+    scheduleOAIImageWidgetVisibility(node);
+    return result;
+  };
+  modelWidget.__oaiBridgePatched = true;
+}
+
+function patchOAIImageBananaModelWidget(node) {
+  const bananaModelWidget = findWidget(node, IMAGE_FIELD.bananaModel);
+  if (!bananaModelWidget || bananaModelWidget.__oaiBridgePatched) return;
+
+  const originalCallback = bananaModelWidget.callback;
+  bananaModelWidget.callback = function oaiBridgeBananaModelCallback(value, ...args) {
+    const result = originalCallback?.apply(this, [value, ...args]);
+    scheduleOAIImageWidgetVisibility(node);
+    return result;
+  };
+  bananaModelWidget.__oaiBridgePatched = true;
+}
+
+function installOAIImageWidgetFilter(node) {
+  patchOAIImageModelWidget(node);
+  patchOAIImageBananaModelWidget(node);
+  scheduleOAIImageWidgetVisibility(node);
+}
+
+function isOAIImageNodeDefinition(nodeType, nodeData) {
+  return nodeData?.name === IMAGE_NODE_ID || nodeData?.node_id === IMAGE_NODE_ID || nodeType?.comfyClass === IMAGE_NODE_ID;
+}
+
+function getSelectedVideoModel(node) {
+  return findWidget(node, VIDEO_FIELD.model)?.value || DEFAULT_VIDEO_MODEL;
+}
+
+function updateOAIVideoWidgetVisibility(node) {
+  if (!node?.widgets) return;
+  const model = getSelectedVideoModel(node);
+  const visible = new Set([
+    VIDEO_FIELD.model,
+    ...(VIDEO_MODEL_VISIBLE_WIDGETS[model] || VIDEO_MODEL_VISIBLE_WIDGETS[DEFAULT_VIDEO_MODEL]),
+  ]);
+  for (const widget of node.widgets) {
+    const name = getWidgetName(widget);
+    if (!VIDEO_WIDGET_NAMES.has(name)) continue;
+    if (visible.has(name)) {
+      showWidget(widget);
+    } else {
+      hideWidget(widget);
+    }
+  }
+
+  refreshNodeLayout(node);
+}
+
+function scheduleOAIVideoWidgetVisibility(node) {
+  updateOAIVideoWidgetVisibility(node);
+  requestAnimationFrame?.(() => updateOAIVideoWidgetVisibility(node));
+  setTimeout(() => updateOAIVideoWidgetVisibility(node), 0);
+}
+
+function patchOAIVideoModelWidget(node) {
+  const modelWidget = findWidget(node, VIDEO_FIELD.model);
+  if (!modelWidget || modelWidget.__oaiBridgePatched) return;
+
+  const originalCallback = modelWidget.callback;
+  modelWidget.callback = function oaiBridgeVideoModelCallback(value, ...args) {
+    const result = originalCallback?.apply(this, [value, ...args]);
+    scheduleOAIVideoWidgetVisibility(node);
+    return result;
+  };
+  modelWidget.__oaiBridgePatched = true;
+}
+
+function installOAIVideoWidgetFilter(node) {
+  patchOAIVideoModelWidget(node);
+  scheduleOAIVideoWidgetVisibility(node);
+}
+
+function isOAIVideoNodeDefinition(nodeType, nodeData) {
+  return nodeData?.name === VIDEO_NODE_ID || nodeData?.node_id === VIDEO_NODE_ID || nodeType?.comfyClass === VIDEO_NODE_ID;
+}
+
+app.registerExtension?.({
+  name: "oai.bridge.widget-filter",
+  beforeRegisterNodeDef(nodeType, nodeData) {
+    if (isOAIImageNodeDefinition(nodeType, nodeData)) {
+      const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
+      nodeType.prototype.onNodeCreated = function oaiBridgeOnNodeCreated(...args) {
+        const result = originalOnNodeCreated?.apply(this, args);
+        installOAIImageWidgetFilter(this);
+        return result;
+      };
+
+      const originalOnConfigure = nodeType.prototype.onConfigure;
+      nodeType.prototype.onConfigure = function oaiBridgeOnConfigure(...args) {
+        const result = originalOnConfigure?.apply(this, args);
+        installOAIImageWidgetFilter(this);
+        return result;
+      };
+      return;
+    }
+
+    if (isOAIVideoNodeDefinition(nodeType, nodeData)) {
+      const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
+      nodeType.prototype.onNodeCreated = function oaiBridgeVideoOnNodeCreated(...args) {
+        const result = originalOnNodeCreated?.apply(this, args);
+        installOAIVideoWidgetFilter(this);
+        return result;
+      };
+
+      const originalOnConfigure = nodeType.prototype.onConfigure;
+      nodeType.prototype.onConfigure = function oaiBridgeVideoOnConfigure(...args) {
+        const result = originalOnConfigure?.apply(this, args);
+        installOAIVideoWidgetFilter(this);
+        return result;
+      };
+    }
+  },
+});
+
+function injectStyle() {
+  if (document.querySelector("link[data-oai-bridge-style]")) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = new URL("oai_bridge_panel.css", import.meta.url).href;
+  link.dataset.oaiBridgeStyle = "true";
+  document.head.appendChild(link);
+}
+
+function row(label, input) {
+  const wrap = document.createElement("label");
+  wrap.className = "oai-bridge-row";
+  const span = document.createElement("span");
+  span.textContent = label;
+  wrap.append(span, input);
+  return wrap;
+}
+
+function button(text, onClick) {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.textContent = text;
+  el.addEventListener("click", onClick);
+  return el;
+}
+
+function sectionTitle(text) {
+  const title = document.createElement("h3");
+  title.className = "oai-bridge-section-title";
+  title.textContent = text;
+  return title;
+}
+
+function getGraph() {
+  return app?.graph || app?.canvas?.graph;
+}
+
+function getLiteGraph() {
+  return globalThis.LiteGraph || window.LiteGraph;
+}
+
+function chooseNodePosition(graph) {
+  const canvas = app?.canvas;
+  if (Array.isArray(canvas?.graph_mouse)) {
+    return [canvas.graph_mouse[0], canvas.graph_mouse[1]];
+  }
+  const count = graph?._nodes?.length || 0;
+  return [120 + count * 24, 120 + count * 24];
+}
+
+function addNodeToGraph(nodeInfo) {
+  const graph = getGraph();
+  if (!graph) throw new Error(TEXT.graphUnavailable);
+
+  const LiteGraph = getLiteGraph();
+  if (!LiteGraph?.createNode) throw new Error(TEXT.liteGraphUnavailable);
+
+  const newNode = LiteGraph.createNode(nodeInfo.node_id);
+  if (!newNode) throw new Error(TEXT.nodeUnavailable);
+
+  newNode.pos = chooseNodePosition(graph);
+  if (app.graph?.add) {
+    app.graph.add(newNode);
+  } else {
+    graph.add(newNode);
+  }
+  graph.setDirtyCanvas?.(true, true);
+  app.canvas?.setDirty?.(true, true);
+  app.canvas?.centerOnNode?.(newNode);
+  return newNode;
+}
+
+function renderNodeList(nodes, status) {
+  const list = document.createElement("div");
+  list.className = "oai-bridge-node-list node-list";
+
+  if (!nodes.length) {
+    const empty = document.createElement("p");
+    empty.className = "oai-bridge-muted";
+    empty.textContent = TEXT.noNodes;
+    list.appendChild(empty);
+    return list;
+  }
+
+  for (const node of nodes) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "oai-bridge-node-card";
+    card.setAttribute("data-node-type", node.node_id || "");
+
+    const header = document.createElement("div");
+    header.className = "oai-bridge-node-card-header";
+
+    const name = document.createElement("strong");
+    name.textContent = node.display_name || node.node_id || TEXT.unnamedNode;
+
+    const category = document.createElement("span");
+    category.textContent = node.category || "OAI Bridge";
+
+    const description = document.createElement("p");
+    description.textContent = node.description || TEXT.noDescription;
+
+    const io = document.createElement("p");
+    io.className = "oai-bridge-node-io";
+    io.textContent = `${TEXT.inputs}\uff1a${(node.inputs || []).join("\u3001") || TEXT.none}\uff1b${TEXT.outputs}\uff1a${(node.outputs || []).join("\u3001") || TEXT.none}`;
+
+    card.addEventListener("click", () => {
+      try {
+        addNodeToGraph(node);
+        status.textContent = `${TEXT.addedPrefix}${node.display_name || node.node_id}`;
+        document.querySelector("[data-oai-bridge-dialog]")?.remove();
+      } catch (error) {
+        status.textContent = `${TEXT.addFailed}${error?.message || error}`;
+      }
+    });
+
+    header.append(name, category);
+    card.append(header, description, io);
+    list.appendChild(card);
+  }
+
+  return list;
+}
+
+function openDialog(panel) {
+  document.querySelector("[data-oai-bridge-dialog]")?.remove();
+
+  const overlay = document.createElement("div");
+  overlay.dataset.oaiBridgeDialog = "true";
+  overlay.className = "oai-bridge-overlay";
+
+  const dialog = document.createElement("section");
+  dialog.className = "oai-bridge-dialog";
+
+  const close = button(TEXT.close, () => overlay.remove());
+  close.className = "oai-bridge-close";
+  close.setAttribute("aria-label", TEXT.close);
+
+  dialog.append(close, panel);
+  overlay.appendChild(dialog);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) overlay.remove();
+  });
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "Escape") overlay.remove();
+    },
+    { once: true },
+  );
+  document.body.appendChild(overlay);
+}
+
+async function showPanel() {
+  injectStyle();
+
+  const panel = document.createElement("div");
+  panel.className = "oai-bridge-panel";
+  const title = document.createElement("h2");
+  title.textContent = TEXT.panelTitle;
+  panel.appendChild(title);
+
+  const token = document.createElement("input");
+  token.placeholder = TEXT.tokenPlaceholder;
+  token.type = "password";
+  const status = document.createElement("p");
+  status.className = "oai-bridge-status";
+
+  const tokenTools = document.createElement("div");
+  tokenTools.className = "oai-bridge-token-tools";
+  const tokenLink = document.createElement("a");
+  tokenLink.href = "https://oaigc.cn";
+  tokenLink.target = "_blank";
+  tokenLink.rel = "noreferrer";
+  tokenLink.textContent = TEXT.tokenLink;
+  tokenTools.appendChild(tokenLink);
+
+  const nodesWrap = document.createElement("div");
+  nodesWrap.className = "oai-bridge-nodes-wrap";
+  nodesWrap.append(sectionTitle(TEXT.projectNodes));
+  const hint = document.createElement("p");
+  hint.className = "oai-bridge-muted";
+  hint.textContent = TEXT.nodeHint;
+  nodesWrap.appendChild(hint);
+
+  try {
+    const data = await api.get("/oai-bridge/config");
+    token.placeholder = data.config?.has_token ? `${TEXT.tokenSaved}${data.config.token_masked}` : TEXT.tokenPlaceholder;
+  } catch {
+    status.textContent = TEXT.configReadFailed;
+  }
+
+  try {
+    const data = await api.get("/oai-bridge/nodes");
+    nodesWrap.appendChild(renderNodeList(data.nodes || [], status));
+  } catch {
+    nodesWrap.appendChild(renderNodeList([], status));
+    status.textContent = TEXT.nodesReadFailed;
+  }
+
+  panel.append(
+    sectionTitle(TEXT.tokenSection),
+    row(TEXT.tokenSection, token),
+    tokenTools,
+    button(TEXT.saveConfig, async () => {
+      const body = {};
+      if (token.value) body.token = token.value;
+      const data = await api.post("/oai-bridge/config", body);
+      status.textContent = data.message || TEXT.configSaved;
+    }),
+    button(TEXT.testConnection, async () => {
+      const data = await api.post("/oai-bridge/test");
+      status.textContent = data.message || TEXT.testDone;
+    }),
+    button(TEXT.refreshApps, async () => {
+      const data = await api.post("/oai-bridge/metadata/refresh");
+      const meta = data.metadata || {};
+      status.textContent = `${data.message || TEXT.refreshDone}\n${TEXT.updatedAt}${meta.updated_at || TEXT.none}\n${TEXT.appCount}${meta.apps?.length || 0}`;
+    }),
+    button(TEXT.cacheStatus, async () => {
+      const data = await api.get("/oai-bridge/metadata");
+      const meta = data.metadata || {};
+      status.textContent = `${TEXT.cacheSource}${meta.source || TEXT.unknown}\n${TEXT.updatedAt}${meta.updated_at || TEXT.none}\n${TEXT.appCount}${meta.apps?.length || 0}`;
+    }),
+    status,
+    nodesWrap,
+  );
+
+  openDialog(panel);
+}
+
+function ensurePanelEntry() {
+  injectStyle();
+  if (document.querySelector("[data-oai-bridge-entry]")) return;
+  if (!document.body) return;
+
+  const entry = document.createElement("button");
+  entry.type = "button";
+  entry.dataset.oaiBridgeEntry = "true";
+  entry.className = "oai-bridge-floating-entry";
+  entry.textContent = TEXT.panelTitle;
+  entry.title = TEXT.panelTitle;
+  entry.addEventListener("click", showPanel);
+
+  document.body.appendChild(entry);
+}
+
+function schedulePanelEntry() {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ensurePanelEntry, { once: true });
+  } else {
+    ensurePanelEntry();
+  }
+  setTimeout(ensurePanelEntry, 1000);
+  setTimeout(ensurePanelEntry, 3000);
+}
+
+schedulePanelEntry();
+
+
+
+
+
+
+
+
+
+
+

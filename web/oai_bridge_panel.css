@@ -1,0 +1,164 @@
+.oai-bridge-panel {
+  width: min(760px, calc(100vw - 48px));
+  color: var(--fg-color, #f5f5f5);
+}
+
+.oai-bridge-panel h2 {
+  margin: 0 0 18px;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.oai-bridge-section-title {
+  margin: 18px 0 10px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--fg-color, #f5f5f5);
+}
+
+.oai-bridge-row {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.oai-bridge-row span {
+  font-size: 13px;
+  color: var(--input-text, #d9d9d9);
+}
+
+.oai-bridge-row input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #555);
+  border-radius: 6px;
+  background: var(--comfy-input-bg, #1e1e1e);
+  color: var(--fg-color, #fff);
+}
+
+.oai-bridge-panel button,
+.oai-bridge-floating-entry,
+.oai-bridge-close {
+  border: 1px solid var(--border-color, #555);
+  border-radius: 6px;
+  background: var(--comfy-menu-bg, #222);
+  color: var(--fg-color, #fff);
+  cursor: pointer;
+}
+
+.oai-bridge-panel button {
+  margin: 6px 8px 6px 0;
+  padding: 7px 10px;
+}
+
+.oai-bridge-status {
+  min-height: 24px;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.oai-bridge-muted {
+  margin: 0;
+  color: var(--descrip-text, #aaa);
+}
+
+.oai-bridge-floating-entry {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  padding: 7px 10px;
+  font-size: 13px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.oai-bridge-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.oai-bridge-dialog {
+  position: relative;
+  box-sizing: border-box;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--border-color, #555);
+  border-radius: 8px;
+  background: var(--comfy-menu-bg, #262626);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
+}
+
+.oai-bridge-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.oai-bridge-nodes-wrap {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color, #444);
+  padding-top: 2px;
+}
+
+.oai-bridge-node-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.oai-bridge-node-card {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  text-align: left;
+  min-height: 132px;
+  padding: 12px;
+  border: 1px solid var(--border-color, #4b4b4b);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+}
+
+.oai-bridge-node-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.oai-bridge-node-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.oai-bridge-node-card strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.oai-bridge-node-card span {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--descrip-text, #aaa);
+}
+
+.oai-bridge-node-card p {
+  margin: 8px 0 0;
+  line-height: 1.45;
+  color: var(--fg-color, #f0f0f0);
+}
+
+.oai-bridge-node-io {
+  font-size: 12px;
+  color: var(--descrip-text, #aaa) !important;
+}
