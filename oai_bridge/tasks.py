@@ -7,6 +7,9 @@ from typing import Any
 from .client import OAIAPIError, OAIClient
 from .config import load_config
 
+IMAGE_TASK_POLL_TIMEOUT = 15 * 60
+VIDEO_TASK_POLL_TIMEOUT = 30 * 60
+
 
 def _extract_task_id(response: dict[str, Any]) -> str:
     data = response.get("data") or {}
@@ -33,7 +36,7 @@ def _format_task_failure(data: dict[str, Any]) -> str:
 
 async def _poll_general(client: OAIClient, task_id: str) -> str:
     cfg = load_config()
-    deadline = time.monotonic() + cfg.poll_timeout
+    deadline = time.monotonic() + IMAGE_TASK_POLL_TIMEOUT
     while time.monotonic() < deadline:
         response = await client.query_task(task_id)
         status, result = _extract_general_result(response)
@@ -52,7 +55,7 @@ async def _poll_general(client: OAIClient, task_id: str) -> str:
 
 async def _poll_seedance(client: OAIClient, task_id: str) -> str:
     cfg = load_config()
-    deadline = time.monotonic() + cfg.poll_timeout
+    deadline = time.monotonic() + VIDEO_TASK_POLL_TIMEOUT
     while time.monotonic() < deadline:
         response = await client.seedance_query(task_id)
         data = response.get("data") or {}

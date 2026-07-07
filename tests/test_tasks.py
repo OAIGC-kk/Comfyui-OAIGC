@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from unittest.mock import patch
 
 
@@ -81,6 +81,46 @@ class TaskRunnerTests(unittest.IsolatedAsyncioTestCase):
                         url = await tasks.run_app(app, parameter)
 
                 self.assertEqual(url, "https://example.test/result.png")
+
+    async def test_general_image_tasks_timeout_after_fifteen_minutes(self):
+        from oai_bridge import tasks
+        from oai_bridge.client import OAIAPIError
+
+        class PendingClient(FakeClient):
+            async def query_task(self, task_id):
+                self.polls += 1
+                return {"code": 200, "data": {"status": "queued", "task_id": task_id, "result": ""}}
+
+        client = PendingClient()
+        monotonic_values = iter([0.0, 899.0, 901.0])
+        with patch.object(tasks, "OAIClient", return_value=client):
+            with patch.object(tasks.time, "monotonic", side_effect=lambda: next(monotonic_values)):
+                with patch.object(tasks.asyncio, "sleep", return_value=None):
+                    with self.assertRaises(OAIAPIError) as raised:
+                        await tasks.run_app({"id": "z-imagewenshengt", "mode": "task_submit"}, {"prompt": "测试"})
+
+        self.assertIn("任务轮询超时", str(raised.exception))
+        self.assertEqual(client.polls, 1)
+
+    async def test_seedance_video_tasks_timeout_after_thirty_minutes(self):
+        from oai_bridge import tasks
+        from oai_bridge.client import OAIAPIError
+
+        class PendingSeedanceClient(FakeClient):
+            async def seedance_query(self, task_id):
+                self.polls += 1
+                return {"code": 200, "data": {"status": "queued", "task_id": task_id}}
+
+        client = PendingSeedanceClient()
+        monotonic_values = iter([0.0, 1799.0, 1801.0])
+        with patch.object(tasks, "OAIClient", return_value=client):
+            with patch.object(tasks.time, "monotonic", side_effect=lambda: next(monotonic_values)):
+                with patch.object(tasks.asyncio, "sleep", return_value=None):
+                    with self.assertRaises(OAIAPIError) as raised:
+                        await tasks.run_app({"id": "seedance", "mode": "seedance"}, {"prompt": "测试"})
+
+        self.assertIn("Seedance 任务轮询超时", str(raised.exception))
+        self.assertEqual(client.polls, 1)
     async def test_seedance_returns_video_url(self):
         from oai_bridge import tasks
 

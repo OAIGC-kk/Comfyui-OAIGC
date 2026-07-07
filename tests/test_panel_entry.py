@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 import unittest
 
 try:
@@ -87,6 +87,7 @@ class PanelEntryTests(unittest.TestCase):
         self.assertIn("widget.type === \"hidden\"", js)
         self.assertIn("widget.hidden = false", js)
         self.assertIn("widget.disabled = false", js)
+        self.assertIn("showWidget(widget)", js)
         self.assertIn("setSize", js)
         self.assertIn("OAIVideoNode", js)
         self.assertIn("ADVANCED_WIDGET_NAMES", js)
@@ -105,12 +106,83 @@ class PanelEntryTests(unittest.TestCase):
         self.assertIn("widget.hidden = true", js)
         self.assertIn("widget.disabled = true", js)
 
+    def test_widget_layout_refresh_preserves_user_resized_nodes(self):
+        js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
+
+        self.assertIn("const currentSize = Array.isArray(node.size) ? node.size : [0, 0];", js)
+        self.assertIn("node.setSize([", js)
+        self.assertIn("Math.max(currentSize[0] || 0, computedSize[0] || 0)", js)
+        self.assertIn("Math.max(currentSize[1] || 0, computedSize[1] || 0)", js)
+        self.assertNotIn("node.setSize(node.computeSize())", js)
+
     def test_cutout_model_does_not_show_prompt_widget(self):
         js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
 
-        self.assertIn("[\"AI\\u6263\\u56fe\"]: []", js)
+        self.assertIn("CUTOUT_IMAGE_MODEL", js)
+        self.assertIn("[CUTOUT_IMAGE_MODEL]: []", js)
         self.assertIn("IMAGE_FIELD.prompt", js)
 
+
+
+    def test_frontend_restricts_media_input_connections_by_type(self):
+        js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
+
+        self.assertIn("MEDIA_INPUT_RULES", js)
+        self.assertIn("patchOAIInputConnectionTypes", js)
+        self.assertIn("onConnectInput", js)
+        self.assertIn("return false", js)
+        self.assertIn("\"IMAGE\"", js)
+        self.assertIn("\"VIDEO\"", js)
+        self.assertIn("\"AUDIO\"", js)
+        self.assertIn("OAIImageNode", js)
+        self.assertIn("OAIVideoNode", js)
+        self.assertIn("OAILLMNode", js)
+        self.assertIn("OAISeedanceAssetNode", js)
+        self.assertIn("numberedMediaFields(\"\\u56fe\\u7247\", 12, \"IMAGE\")", js)
+        self.assertIn("numberedMediaFields(\"\\u56fe\\u7247\", 9, \"IMAGE\")", js)
+        self.assertIn("numberedMediaFields(\"\\u89c6\\u9891\", 3, \"VIDEO\")", js)
+        self.assertIn("numberedMediaFields(\"\\u97f3\\u9891\", 3, \"AUDIO\")", js)
+        self.assertIn("\\u56fe\\u50cf", js)
+
+    def test_frontend_displays_dynamic_cost_badge(self):
+        js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
+
+        self.assertIn("/oai-bridge/cost", js)
+        self.assertIn(r'DEFAULT_IMAGE_MODEL = "GPT \u751f\u56fe"', js)
+        self.assertIn("MODEL_COST_MODELS", js)
+        self.assertIn("buildGptImageCostRequest", js)
+        self.assertIn(r'COST_BADGE_TEXT = "O\u5e01"', js)
+        self.assertIn("installOAICostBadge", js)
+        self.assertIn("drawOAICostBadge", js)
+        self.assertIn("refreshOAICost", js)
+        self.assertIn("buildImageCostRequest", js)
+        self.assertIn("buildBananaCostRequest", js)
+        self.assertIn('appId: "banana"', js)
+        self.assertIn("maybeRefreshOAICostFromDraw", js)
+        self.assertIn("__oaiBridgeCostDrawCheckAt", js)
+        self.assertIn("buildVideoCostRequest", js)
+        self.assertIn("getCostRequestSignature", js)
+        self.assertIn("__oaiBridgeCostSignature", js)
+        self.assertIn("options.force", js)
+        self.assertIn('setNodeCost(node, "...")', js)
+        self.assertIn("scheduleOAICostRefresh(node, { force: true })", js)
+        self.assertIn("return buildGptImageCostRequest(node)", js)
+        self.assertIn('appId: "gpt-image"', js)
+        self.assertNotIn('kind: "gpt_image"', js)
+        self.assertIn("fast: asCostBool(getWidgetValue(node, IMAGE_FIELD.fast", js)
+        self.assertNotIn("[DEFAULT_IMAGE_MODEL]: (node) =>", js)
+        self.assertIn("resolution: getWidgetValue(node, IMAGE_FIELD.resolution", js)
+        self.assertIn("n: Number(getWidgetValue(node, IMAGE_FIELD.count", js)
+        self.assertIn("parameter.hd = asCostBool(getWidgetValue(node, IMAGE_FIELD.hd", js)
+        self.assertIn("COST_BADGE_HEADER_Y = -54", js)
+        self.assertIn("COST_BADGE_CATEGORY_RESERVED_WIDTH", js)
+        self.assertIn("const y = COST_BADGE_HEADER_Y", js)
+        self.assertIn('__oaiBridgeCostKind = "image"', js)
+        self.assertIn('__oaiBridgeCostKind === "image"', js)
+        self.assertIn('__oaiBridgeCostKind = "video"', js)
+        self.assertIn("workflow_app_cost", Path("oai_bridge/client.py").read_text(encoding="utf-8"))
+        self.assertIn("model_cost", Path("oai_bridge/client.py").read_text(encoding="utf-8"))
+        self.assertIn("seedance_cost", Path("oai_bridge/client.py").read_text(encoding="utf-8"))
 
     def test_frontend_restores_saved_previews_from_history(self):
         js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")

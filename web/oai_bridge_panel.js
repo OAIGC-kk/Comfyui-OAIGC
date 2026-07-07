@@ -53,6 +53,8 @@ const bridgeApi = {
 
 const IMAGE_NODE_ID = "OAIImageNode";
 const VIDEO_NODE_ID = "OAIVideoNode";
+const LLM_NODE_ID = "OAILLMNode";
+const SEEDANCE_ASSET_NODE_ID = "OAISeedanceAssetNode";
 const IMAGE_FIELD = Object.freeze({
   model: "\u6a21\u578b",
   prompt: "\u63d0\u793a\u8bcd",
@@ -85,13 +87,17 @@ const VIDEO_FIELD = Object.freeze({
 
 const ADVANCED_WIDGET_NAMES = new Set([IMAGE_FIELD.extra, VIDEO_FIELD.extra]);
 
-const DEFAULT_IMAGE_MODEL = "\u963f\u91cc\u9020\u76f8-\u6587\u751f\u56fe";
+const DEFAULT_IMAGE_MODEL = "GPT \u751f\u56fe";
+const ALI_IMAGE_MODEL = "\u963f\u91cc\u9020\u76f8-\u6587\u751f\u56fe";
 const BANANA_IMAGE_MODEL = "Banana\u751f\u56fe";
+const AGNES_IMAGE_MODEL = "Agnes Image 2.1 Flash";
+const CUTOUT_IMAGE_MODEL = "AI\u6263\u56fe";
+const OUTPAINT_IMAGE_MODEL = "AI\u6269\u56fe";
 const ALI_SUPPORTED_ASPECT_RATIOS = new Set(["9:16", "2:3", "1:1", "4:3", "3:2", "16:9"]);
 const DEFAULT_BANANA_MODEL = "banana2";
 const BANANA_MODELS_WITH_HD = new Set(["banana"]);
 const MODEL_VISIBLE_WIDGETS = Object.freeze({
-  [DEFAULT_IMAGE_MODEL]: [
+  [ALI_IMAGE_MODEL]: [
     IMAGE_FIELD.prompt,
     IMAGE_FIELD.aspect,
     IMAGE_FIELD.count,
@@ -105,21 +111,21 @@ const MODEL_VISIBLE_WIDGETS = Object.freeze({
     IMAGE_FIELD.imageSize,
     IMAGE_FIELD.fast,
   ],
-  ["GPT \u751f\u56fe"]: [
+  [DEFAULT_IMAGE_MODEL]: [
     IMAGE_FIELD.prompt,
     IMAGE_FIELD.aspect,
     IMAGE_FIELD.gptModel,
     IMAGE_FIELD.fast,
     IMAGE_FIELD.resolution,
   ],
-  ["Agnes Image 2.1 Flash"]: [
+  [AGNES_IMAGE_MODEL]: [
     IMAGE_FIELD.prompt,
     IMAGE_FIELD.aspect,
     IMAGE_FIELD.count,
     IMAGE_FIELD.resolution,
   ],
-  ["AI\u6263\u56fe"]: [],
-  ["AI\u6269\u56fe"]: [
+  [CUTOUT_IMAGE_MODEL]: [],
+  [OUTPAINT_IMAGE_MODEL]: [
     IMAGE_FIELD.expandTop,
     IMAGE_FIELD.expandBottom,
     IMAGE_FIELD.expandLeft,
@@ -157,6 +163,329 @@ const VIDEO_WIDGET_NAMES = new Set([
   ...ADVANCED_WIDGET_NAMES,
   ...Object.values(VIDEO_MODEL_VISIBLE_WIDGETS).flat(),
 ]);
+
+function numberedMediaFields(prefix, count, type) {
+  return Object.fromEntries(Array.from({ length: count }, (_, index) => [`${prefix}${index + 1}`, type]));
+}
+
+const MEDIA_INPUT_RULES = Object.freeze({
+  [IMAGE_NODE_ID]: numberedMediaFields("\u56fe\u7247", 12, "IMAGE"),
+  [VIDEO_NODE_ID]: {
+    ...numberedMediaFields("\u56fe\u7247", 9, "IMAGE"),
+    ...numberedMediaFields("\u89c6\u9891", 3, "VIDEO"),
+    ...numberedMediaFields("\u97f3\u9891", 3, "AUDIO"),
+  },
+  [LLM_NODE_ID]: numberedMediaFields("\u56fe\u7247", 6, "IMAGE"),
+  [SEEDANCE_ASSET_NODE_ID]: { "\u56fe\u50cf": "IMAGE" },
+});
+
+function isOAINodeDefinition(nodeType, nodeData) {
+  const typeName = nodeData?.name || nodeData?.node_id || nodeType?.comfyClass || "";
+  return Boolean(MEDIA_INPUT_RULES[typeName]);
+}
+
+function getMediaRuleTypeName(node) {
+  const typeName = getNodeTypeName(node);
+  if (MEDIA_INPUT_RULES[typeName]) return typeName;
+  return Object.keys(MEDIA_INPUT_RULES).find((candidate) => typeName.includes(candidate)) || "";
+}
+
+function getInputMediaType(node, inputIndex) {
+  const typeName = getMediaRuleTypeName(node);
+  const inputName = node?.inputs?.[inputIndex]?.name || node?.inputs?.[inputIndex]?.label;
+  return MEDIA_INPUT_RULES[typeName]?.[inputName] || null;
+}
+
+function normalizeSocketTypes(type) {
+  if (!type) return [];
+  if (Array.isArray(type)) return type.flatMap((item) => normalizeSocketTypes(item));
+  if (typeof type === "object") {
+    return normalizeSocketTypes(type.type || type.name || type.value);
+  }
+  return String(type)
+    .split(",")
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function getOutputSocketType(outputType, outputSlot, outputNode, outputIndex) {
+  const slotType = outputSlot?.type || outputSlot?.name;
+  const nodeType = outputNode?.outputs?.[outputIndex]?.type || outputNode?.outputs?.[outputIndex]?.name;
+  return outputType || slotType || nodeType;
+}
+
+function isCompatibleSocketType(actualType, expectedType) {
+  const types = normalizeSocketTypes(actualType);
+  if (!types.length) return false;
+  return types.includes(expectedType) || types.includes("*");
+}
+
+function isMediaInputConnectionAllowed(node, inputIndex, outputType, outputSlot, outputNode, outputIndex) {
+  const expectedType = getInputMediaType(node, inputIndex);
+  if (!expectedType) return true;
+  const actualType = getOutputSocketType(outputType, outputSlot, outputNode, outputIndex);
+  return isCompatibleSocketType(actualType, expectedType);
+}
+
+function patchOAIInputConnectionTypes(nodeType) {
+  if (!nodeType?.prototype || nodeType.prototype.__oaiBridgeInputTypesPatched) return;
+  const originalOnConnectInput = nodeType.prototype.onConnectInput;
+  nodeType.prototype.onConnectInput = function oaiBridgeOnConnectInput(inputIndex, outputType, outputSlot, outputNode, outputIndex, ...args) {
+    if (!isMediaInputConnectionAllowed(this, inputIndex, outputType, outputSlot, outputNode, outputIndex)) {
+      return false;
+    }
+    return originalOnConnectInput?.apply(this, [inputIndex, outputType, outputSlot, outputNode, outputIndex, ...args]);
+  };
+  nodeType.prototype.__oaiBridgeInputTypesPatched = true;
+}
+const COST_BADGE_TEXT = "O\u5e01";
+const COST_BADGE_HEADER_Y = -54;
+const COST_BADGE_CATEGORY_RESERVED_WIDTH = 190;
+const MODEL_COST_MODELS = Object.freeze({
+  [AGNES_IMAGE_MODEL]: (node) => ({
+    model: "agnes-image-2.1-flash",
+    prompt: getWidgetValue(node, IMAGE_FIELD.prompt, ""),
+    ratio: getWidgetValue(node, IMAGE_FIELD.aspect, "1:1"),
+    size: getWidgetValue(node, IMAGE_FIELD.resolution, "1K"),
+    n: Number(getWidgetValue(node, IMAGE_FIELD.count, 1)),
+  }),
+});
+const IMAGE_COST_APP_IDS = Object.freeze({
+  [ALI_IMAGE_MODEL]: "z-imagewenshengt",
+  [CUTOUT_IMAGE_MODEL]: "tupiankoutu",
+  [OUTPAINT_IMAGE_MODEL]: "kuotu",
+});
+const SEEDANCE_COST_MODEL_VALUES = Object.freeze({
+  [DEFAULT_VIDEO_MODEL]: "seed-2",
+  ["seedance2.0-fast"]: "seed-2-fast",
+});
+
+function getWidgetValue(node, name, fallback = undefined) {
+  const widget = findWidget(node, name);
+  return widget?.value ?? fallback;
+}
+
+function asCostBool(value) {
+  return !["\u5426", "false", "False", "0", "no", "No", false].includes(value);
+}
+
+function buildGptImageCostRequest(node) {
+  return {
+    kind: "workflow",
+    payload: {
+      appId: "gpt-image",
+      parameter: {
+        prompt: getWidgetValue(node, IMAGE_FIELD.prompt, ""),
+        model: getWidgetValue(node, IMAGE_FIELD.gptModel, "gpt-image-2"),
+        size: getWidgetValue(node, IMAGE_FIELD.aspect, "1:1"),
+        fast: asCostBool(getWidgetValue(node, IMAGE_FIELD.fast, "\u662f")),
+        resolution: getWidgetValue(node, IMAGE_FIELD.resolution, "1K"),
+      },
+    },
+  };
+}
+
+function buildBananaCostRequest(node) {
+  const bananaModel = getWidgetValue(node, IMAGE_FIELD.bananaModel, DEFAULT_BANANA_MODEL);
+  const parameter = {
+    model: bananaModel,
+    prompt: getWidgetValue(node, IMAGE_FIELD.prompt, ""),
+    size: getWidgetValue(node, IMAGE_FIELD.aspect, "1:1"),
+    image_size: getWidgetValue(node, IMAGE_FIELD.imageSize, "1k"),
+    fast: asCostBool(getWidgetValue(node, IMAGE_FIELD.fast, "\u662f")),
+  };
+  if (bananaModel === "banana") {
+    parameter.hd = asCostBool(getWidgetValue(node, IMAGE_FIELD.hd, "\u5426"));
+  }
+  return { kind: "workflow", payload: { appId: "banana", parameter } };
+}
+
+function buildImageCostRequest(node) {
+  const model = getSelectedImageModel(node);
+  if (model === DEFAULT_IMAGE_MODEL) return buildGptImageCostRequest(node);
+  if (model === BANANA_IMAGE_MODEL) return buildBananaCostRequest(node);
+
+  const modelCostFactory = MODEL_COST_MODELS[model];
+  if (modelCostFactory) {
+    return { kind: "model", payload: modelCostFactory(node) };
+  }
+
+  const appId = IMAGE_COST_APP_IDS[model];
+  if (!appId) return null;
+
+  if (model === ALI_IMAGE_MODEL) {
+    return {
+      kind: "workflow",
+      payload: {
+        appId,
+        parameter: {
+          prompt: getWidgetValue(node, IMAGE_FIELD.prompt, ""),
+          num: Number(getWidgetValue(node, IMAGE_FIELD.count, 1)),
+          magnification: Number(getWidgetValue(node, IMAGE_FIELD.magnification, 1.1)),
+          aspect_ratio: getWidgetValue(node, IMAGE_FIELD.aspect, "1:1"),
+          use_pre_llm: asCostBool(getWidgetValue(node, IMAGE_FIELD.preLlm, "\u662f")),
+        },
+      },
+    };
+  }
+
+  if (model === OUTPAINT_IMAGE_MODEL) {
+    return {
+      kind: "workflow",
+      payload: {
+        appId,
+        parameter: {
+          image: "",
+          top: String(getWidgetValue(node, IMAGE_FIELD.expandTop, "1")),
+          bottom: String(getWidgetValue(node, IMAGE_FIELD.expandBottom, "1")),
+          left: String(getWidgetValue(node, IMAGE_FIELD.expandLeft, "1")),
+          right: String(getWidgetValue(node, IMAGE_FIELD.expandRight, "1")),
+        },
+      },
+    };
+  }
+
+  return { kind: "workflow", payload: { appId, parameter: { image: "" } } };
+}
+
+function buildVideoCostRequest(node) {
+  const model = getSelectedVideoModel(node);
+  const modelValue = SEEDANCE_COST_MODEL_VALUES[model] || SEEDANCE_COST_MODEL_VALUES[DEFAULT_VIDEO_MODEL];
+  return {
+    kind: "seedance",
+    payload: {
+      model: modelValue,
+      prompt: getWidgetValue(node, VIDEO_FIELD.prompt, ""),
+      metadata: {
+        ratio: getWidgetValue(node, VIDEO_FIELD.aspect, "16:9"),
+        duration: Number(getWidgetValue(node, VIDEO_FIELD.duration, 4)),
+        resolution: getWidgetValue(node, VIDEO_FIELD.resolution, "720p"),
+        generate_audio: asCostBool(getWidgetValue(node, VIDEO_FIELD.generateAudio, "\u662f")),
+      },
+    },
+  };
+}
+
+function buildCostRequest(node) {
+  if (node?.__oaiBridgeCostKind === "image") return buildImageCostRequest(node);
+  if (node?.__oaiBridgeCostKind === "video") return buildVideoCostRequest(node);
+  const typeName = getNodeTypeName(node);
+  if (typeName === IMAGE_NODE_ID || typeName.includes(IMAGE_NODE_ID)) return buildImageCostRequest(node);
+  if (typeName === VIDEO_NODE_ID || typeName.includes(VIDEO_NODE_ID)) return buildVideoCostRequest(node);
+  return null;
+}
+
+function setNodeCost(node, value) {
+  node.__oaiBridgeCostText = value === null || value === undefined || value === "" ? `-- ${COST_BADGE_TEXT}` : `${value} ${COST_BADGE_TEXT}`;
+  app?.graph?.setDirtyCanvas?.(true, true);
+  app?.canvas?.setDirty?.(true, true);
+}
+
+function getCostRequestSignature(request) {
+  try {
+    return JSON.stringify(request);
+  } catch (error) {
+    return String(Date.now());
+  }
+}
+
+async function refreshOAICost(node, options = {}) {
+  const request = buildCostRequest(node);
+  if (!request) {
+    node.__oaiBridgeCostSignature = "";
+    setNodeCost(node, null);
+    return;
+  }
+  const signature = getCostRequestSignature(request);
+  if (!options.force && node.__oaiBridgeCostSignature === signature && node.__oaiBridgeCostText && !node.__oaiBridgeCostPending) return;
+  node.__oaiBridgeCostSignature = signature;
+  node.__oaiBridgeCostPending = true;
+  setNodeCost(node, "...");
+  const ticket = (node.__oaiBridgeCostTicket || 0) + 1;
+  node.__oaiBridgeCostTicket = ticket;
+  try {
+    const response = await bridgeApi.post("/oai-bridge/cost", request);
+    if (node.__oaiBridgeCostTicket !== ticket) return;
+    setNodeCost(node, response?.ok ? response.cost : null);
+  } catch (error) {
+    if (node.__oaiBridgeCostTicket === ticket) setNodeCost(node, null);
+  } finally {
+    if (node.__oaiBridgeCostTicket === ticket) node.__oaiBridgeCostPending = false;
+  }
+}
+
+function scheduleOAICostRefresh(node, options = {}) {
+  if (options.force) node.__oaiBridgeCostSignature = "";
+  clearTimeout(node.__oaiBridgeCostTimer);
+  node.__oaiBridgeCostTimer = setTimeout(() => refreshOAICost(node, options), 300);
+}
+
+function maybeRefreshOAICostFromDraw(node) {
+  const now = Date.now();
+  if (now - (node.__oaiBridgeCostDrawCheckAt || 0) < 500) return;
+  node.__oaiBridgeCostDrawCheckAt = now;
+  const request = buildCostRequest(node);
+  const signature = request ? getCostRequestSignature(request) : "";
+  if (signature !== (node.__oaiBridgeCostSignature || "")) scheduleOAICostRefresh(node, { force: true });
+}
+
+function drawOAICostBadge(node, ctx) {
+  maybeRefreshOAICostFromDraw(node);
+  const text = node.__oaiBridgeCostText;
+  if (!text || !ctx) return;
+  ctx.save();
+  ctx.font = "12px sans-serif";
+  const paddingX = 8;
+  const width = Math.ceil(ctx.measureText(text).width) + paddingX * 2;
+  const height = 20;
+  const nodeWidth = node.size?.[0] || 180;
+  const x = Math.max(8, nodeWidth - width - COST_BADGE_CATEGORY_RESERVED_WIDTH);
+  const y = COST_BADGE_HEADER_Y;
+  ctx.fillStyle = "rgba(20, 20, 20, 0.76)";
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 5);
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, y, width, height);
+  }
+  ctx.fillStyle = "#f7d774";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + paddingX, y + height / 2);
+  ctx.restore();
+}
+
+function patchCostCallbacks(node) {
+  if (!node?.widgets) return;
+  for (const widget of node.widgets) {
+    if (widget.__oaiBridgeCostPatched) continue;
+    const originalCallback = widget.callback;
+    widget.callback = function oaiBridgeCostWidgetCallback(value, ...args) {
+      const result = originalCallback?.apply(this, [value, ...args]);
+      scheduleOAICostRefresh(node, { force: true });
+      return result;
+    };
+    widget.__oaiBridgeCostPatched = true;
+  }
+}
+
+function installOAICostBadge(node) {
+  if (!node || node.__oaiBridgeCostInstalled) {
+    patchCostCallbacks(node);
+    scheduleOAICostRefresh(node);
+    return;
+  }
+  const originalOnDrawForeground = node.onDrawForeground;
+  node.onDrawForeground = function oaiBridgeCostForeground(ctx, ...args) {
+    const result = originalOnDrawForeground?.apply(this, [ctx, ...args]);
+    drawOAICostBadge(this, ctx);
+    return result;
+  };
+  node.__oaiBridgeCostInstalled = true;
+  patchCostCallbacks(node);
+  scheduleOAICostRefresh(node);
+}
+
 
 function getWidgetName(widget) {
   return widget?.name || widget?.label;
@@ -213,6 +542,8 @@ function showWidget(widget) {
   } else {
     delete widget.draw;
   }
+  widget.hidden = false;
+  widget.disabled = false;
   delete widget.__oaiBridgeHidden;
   delete widget.__oaiBridgeOriginal;
 }
@@ -231,7 +562,12 @@ function hideWidget(widget) {
 }
 function refreshNodeLayout(node) {
   if (node?.computeSize && node?.setSize) {
-    node.setSize(node.computeSize());
+    const computedSize = node.computeSize();
+    const currentSize = Array.isArray(node.size) ? node.size : [0, 0];
+    node.setSize([
+      Math.max(currentSize[0] || 0, computedSize[0] || 0),
+      Math.max(currentSize[1] || 0, computedSize[1] || 0),
+    ]);
   }
   app?.graph?.setDirtyCanvas?.(true, true);
   app?.canvas?.setDirty?.(true, true);
@@ -247,7 +583,7 @@ function hideAdvancedWidgets(node) {
 }
 
 function normalizeOAIImageWidgetValues(node) {
-  if (getSelectedImageModel(node) !== DEFAULT_IMAGE_MODEL) return;
+  if (getSelectedImageModel(node) !== ALI_IMAGE_MODEL) return;
   const aspectWidget = findWidget(node, IMAGE_FIELD.aspect);
   if (aspectWidget && !ALI_SUPPORTED_ASPECT_RATIOS.has(aspectWidget.value)) {
     aspectWidget.value = "1:1";
@@ -272,6 +608,7 @@ function updateOAIImageWidgetVisibility(node) {
     }
   }
 
+  scheduleOAICostRefresh(node, { force: true });
   refreshNodeLayout(node);
 }
 
@@ -308,9 +645,11 @@ function patchOAIImageBananaModelWidget(node) {
 }
 
 function installOAIImageWidgetFilter(node) {
+  node.__oaiBridgeCostKind = "image";
   patchOAIImageModelWidget(node);
   patchOAIImageBananaModelWidget(node);
   scheduleOAIImageWidgetVisibility(node);
+  installOAICostBadge(node);
 }
 
 function isOAIImageNodeDefinition(nodeType, nodeData) {
@@ -361,8 +700,10 @@ function patchOAIVideoModelWidget(node) {
 }
 
 function installOAIVideoWidgetFilter(node) {
+  node.__oaiBridgeCostKind = "video";
   patchOAIVideoModelWidget(node);
   scheduleOAIVideoWidgetVisibility(node);
+  installOAICostBadge(node);
 }
 
 function isOAIVideoNodeDefinition(nodeType, nodeData) {
@@ -372,6 +713,7 @@ function isOAIVideoNodeDefinition(nodeType, nodeData) {
 app.registerExtension?.({
   name: "oai.bridge.widget-filter",
   beforeRegisterNodeDef(nodeType, nodeData) {
+    if (isOAINodeDefinition(nodeType, nodeData)) patchOAIInputConnectionTypes(nodeType);
     if (isOAIImageNodeDefinition(nodeType, nodeData)) {
       const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
       nodeType.prototype.onNodeCreated = function oaiBridgeOnNodeCreated(...args) {
@@ -408,7 +750,7 @@ app.registerExtension?.({
 });
 
 
-const PREVIEW_RESTORE_NODE_TYPES = new Set([IMAGE_NODE_ID, VIDEO_NODE_ID, "SaveImage", "保存图像"]);
+const PREVIEW_RESTORE_NODE_TYPES = new Set([IMAGE_NODE_ID, VIDEO_NODE_ID, "SaveImage", "\u4fdd\u5b58\u56fe\u50cf"]);
 const PREVIEW_PROPERTY = "__oaiBridgePreviewImages";
 let previewRestoreInFlight = false;
 const previewRestoreTimers = new Set();
@@ -452,12 +794,12 @@ function getNodeTypeName(node) {
 
 function shouldRestoreNodePreview(node) {
   const typeName = getNodeTypeName(node);
-  return PREVIEW_RESTORE_NODE_TYPES.has(typeName) || typeName.includes("SaveImage") || typeName.includes("保存图像");
+  return PREVIEW_RESTORE_NODE_TYPES.has(typeName) || typeName.includes("SaveImage") || typeName.includes("\u4fdd\u5b58\u56fe\u50cf");
 }
 
 function isPreviewRestoreNodeDefinition(nodeType, nodeData) {
   const typeName = nodeData?.name || nodeData?.node_id || nodeType?.comfyClass || "";
-  return PREVIEW_RESTORE_NODE_TYPES.has(typeName) || typeName.includes("SaveImage") || typeName.includes("保存图像");
+  return PREVIEW_RESTORE_NODE_TYPES.has(typeName) || typeName.includes("SaveImage") || typeName.includes("\u4fdd\u5b58\u56fe\u50cf");
 }
 
 function getLinkSourceNode(graph, linkId) {
@@ -474,7 +816,7 @@ function getUpstreamImageNodeIds(node, graph = getGraph()) {
     const sourceNode = getLinkSourceNode(graph, input.link);
     if (!sourceNode) continue;
     const sourceType = getNodeTypeName(sourceNode);
-    if (sourceType === IMAGE_NODE_ID || sourceType.includes("Image") || sourceType.includes("图像")) {
+    if (sourceType === IMAGE_NODE_ID || sourceType.includes("Image") || sourceType.includes("\u56fe\u50cf")) {
       upstreamIds.push(String(sourceNode.id));
     }
   }
