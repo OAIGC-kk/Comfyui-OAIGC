@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import sys
 import types
 import unittest
@@ -85,11 +85,13 @@ async def _run_seedance_case(nodes_video, execute_kwargs, captured, fake_uploads
     original_find = nodes_video._find_video_app
     original_run = nodes_video.run_app
     original_download = nodes_video.download_video_url
+    original_save = nodes_video.save_video_bytes_to_output
     original_upload_video = nodes_video.upload_video_input
     original_upload_audio = nodes_video.upload_audio_input
     nodes_video._find_video_app = lambda label: {"id": "seedance", "mode": "seedance", "output": "video"}
     nodes_video.run_app = fake_run_app
     nodes_video.download_video_url = fake_download_video_url
+    nodes_video.save_video_bytes_to_output = lambda url, filename_prefix="OAI_Bridge": {"filename": "OAI_Bridge_00001_.mp4", "subfolder": "OAI_Bridge", "type": "output", "format": "video/mp4"}
     if fake_uploads:
         nodes_video.upload_video_input = fake_upload_video_input
         nodes_video.upload_audio_input = fake_upload_audio_input
@@ -99,6 +101,7 @@ async def _run_seedance_case(nodes_video, execute_kwargs, captured, fake_uploads
         nodes_video._find_video_app = original_find
         nodes_video.run_app = original_run
         nodes_video.download_video_url = original_download
+        nodes_video.save_video_bytes_to_output = original_save
         nodes_video.upload_video_input = original_upload_video
         nodes_video.upload_audio_input = original_upload_audio
 
@@ -168,12 +171,14 @@ class VideoModelTests(unittest.TestCase):
             original_find = nodes_video._find_video_app
             original_run = nodes_video.run_app
             original_download = nodes_video.download_video_url
+            original_save = nodes_video.save_video_bytes_to_output
             original_upload_image = nodes_video.upload_image_tensor
             original_upload_video = nodes_video.upload_video_input
             original_upload_audio = nodes_video.upload_audio_input
             nodes_video._find_video_app = lambda label: {"id": "seedance", "mode": "seedance", "output": "video"}
             nodes_video.run_app = fake_run_app
             nodes_video.download_video_url = fake_download_video_url
+            nodes_video.save_video_bytes_to_output = lambda url, filename_prefix="OAI_Bridge": {"filename": "OAI_Bridge_00001_.mp4", "subfolder": "OAI_Bridge", "type": "output", "format": "video/mp4"}
             nodes_video.upload_image_tensor = fake_upload_image_tensor
             nodes_video.upload_video_input = fake_upload_video_input
             nodes_video.upload_audio_input = fake_upload_audio_input
@@ -195,6 +200,7 @@ class VideoModelTests(unittest.TestCase):
                 nodes_video._find_video_app = original_find
                 nodes_video.run_app = original_run
                 nodes_video.download_video_url = original_download
+                nodes_video.save_video_bytes_to_output = original_save
                 nodes_video.upload_image_tensor = original_upload_image
                 nodes_video.upload_video_input = original_upload_video
                 nodes_video.upload_audio_input = original_upload_audio
@@ -272,10 +278,12 @@ class VideoModelTests(unittest.TestCase):
             original_find = nodes_video._find_video_app
             original_run = nodes_video.run_app
             original_download = nodes_video.download_video_url
+            original_save = nodes_video.save_video_bytes_to_output
             original_upload_video = nodes_video.upload_video_input
             nodes_video._find_video_app = lambda label: {"id": "seedance", "mode": "seedance", "output": "video"}
             nodes_video.run_app = fake_run_app
             nodes_video.download_video_url = fake_download_video_url
+            nodes_video.save_video_bytes_to_output = lambda url, filename_prefix="OAI_Bridge": {"filename": "OAI_Bridge_00001_.mp4", "subfolder": "OAI_Bridge", "type": "output", "format": "video/mp4"}
             nodes_video.upload_video_input = fake_upload_video_input
             try:
                 return await OAIVideoNode.execute(
@@ -290,6 +298,7 @@ class VideoModelTests(unittest.TestCase):
                 nodes_video._find_video_app = original_find
                 nodes_video.run_app = original_run
                 nodes_video.download_video_url = original_download
+                nodes_video.save_video_bytes_to_output = original_save
                 nodes_video.upload_video_input = original_upload_video
 
         asyncio.run(run_case())

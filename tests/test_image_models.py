@@ -56,6 +56,11 @@ def _install_fake_comfy_io():
                 self.args = args
                 self.kwargs = kwargs
 
+        class ImageSaveHelper:
+            @staticmethod
+            def get_save_images_ui(images, filename_prefix, cls=None, compress_level=4):
+                return {"images": [{"filename": f"{filename_prefix}_00001_.png", "subfolder": "OAI_Bridge", "type": "output"}]}
+
     comfy_api = types.ModuleType("comfy_api")
     latest = types.ModuleType("comfy_api.latest")
     latest.IO = FakeIO
@@ -100,7 +105,7 @@ class ImageModelTests(unittest.TestCase):
 
         self.assertTrue(schema.has_intermediate_output)
 
-    def test_execute_returns_preview_image_metadata(self):
+    def test_execute_saves_image_to_output_assets(self):
         _install_fake_comfy_io()
 
         import oai_bridge.nodes_image as nodes_image
@@ -127,9 +132,7 @@ class ImageModelTests(unittest.TestCase):
 
         self.assertEqual(output.args, ("image-tensor",))
         self.assertIn("ui", output.kwargs)
-        self.assertEqual(output.kwargs["ui"].__class__.__name__, "PreviewImage")
-        self.assertEqual(output.kwargs["ui"].args, ("image-tensor",))
-        self.assertEqual(output.kwargs["ui"].kwargs, {"cls": OAIImageNode})
+        self.assertEqual(output.kwargs["ui"], {"images": [{"filename": "OAI_Bridge_00001_.png", "subfolder": "OAI_Bridge", "type": "output"}]})
 
 
     def test_schema_does_not_expose_advanced_json_input(self):

@@ -109,7 +109,7 @@ class OAIImageNode(IO.ComfyNode):
         )
         url = await run_app(app, parameter)
         image = await download_image_url(url)
-        return IO.NodeOutput(image, ui=UI.PreviewImage(image, cls=cls))
+        return IO.NodeOutput(image, ui=UI.ImageSaveHelper.get_save_images_ui(image, filename_prefix="OAI_Bridge", cls=cls))
 
 
 

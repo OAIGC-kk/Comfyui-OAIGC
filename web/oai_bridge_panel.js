@@ -1,4 +1,5 @@
 ﻿import { app } from "../../scripts/app.js";
+import { api as comfyApi } from "../../scripts/api.js";
 
 const TEXT = {
   panelTitle: "OAI Bridge \u8282\u70b9\u7ba1\u7406",
@@ -35,7 +36,7 @@ const TEXT = {
   nodeUnavailable: "\u672a\u627e\u5230\u8be5\u8282\u70b9\u7c7b\u578b\u3002",
 };
 
-const api = {
+const bridgeApi = {
   async get(path) {
     const res = await fetch(path);
     return await res.json();
@@ -406,6 +407,242 @@ app.registerExtension?.({
   },
 });
 
+
+const PREVIEW_RESTORE_NODE_TYPES = new Set([IMAGE_NODE_ID, VIDEO_NODE_ID, "SaveImage", "保存图像"]);
+const PREVIEW_PROPERTY = "__oaiBridgePreviewImages";
+let previewRestoreInFlight = false;
+const previewRestoreTimers = new Set();
+
+function getHistoryItems(history) {
+  if (Array.isArray(history)) return history;
+  if (!history || typeof history !== "object") return [];
+  return Object.values(history);
+}
+
+function getHistoryOutputs(item) {
+  const outputs = item?.outputs;
+  return outputs && typeof outputs === "object" ? outputs : null;
+}
+
+function hasImagesForAnyNode(outputs, nodes) {
+  return nodes.some((node) => Boolean(getNodeOutputImages(outputs, node)));
+}
+
+async function findLatestHistoryOutputs(nodes = []) {
+  try {
+    const history = typeof comfyApi?.getHistory === "function" ? await comfyApi.getHistory(50) : await bridgeApi.get("/history");
+    const items = getHistoryItems(history);
+    let fallbackOutputs = null;
+    for (const item of items) {
+      const outputs = getHistoryOutputs(item);
+      if (!outputs) continue;
+      fallbackOutputs ||= outputs;
+      if (!nodes.length || hasImagesForAnyNode(outputs, nodes)) return outputs;
+    }
+    return fallbackOutputs;
+  } catch (error) {
+    console.debug?.("OAI Bridge 恢复预览失败", error);
+  }
+  return null;
+}
+
+function getNodeTypeName(node) {
+  return node?.constructor?.comfyClass || node?.type || node?.comfyClass || "";
+}
+
+function shouldRestoreNodePreview(node) {
+  const typeName = getNodeTypeName(node);
+  return PREVIEW_RESTORE_NODE_TYPES.has(typeName) || typeName.includes("SaveImage") || typeName.includes("保存图像");
+}
+
+function isPreviewRestoreNodeDefinition(nodeType, nodeData) {
+  const typeName = nodeData?.name || nodeData?.node_id || nodeType?.comfyClass || "";
+  return PREVIEW_RESTORE_NODE_TYPES.has(typeName) || typeName.includes("SaveImage") || typeName.includes("保存图像");
+}
+
+function getLinkSourceNode(graph, linkId) {
+  const link = graph?.links?.[linkId];
+  const sourceId = link?.origin_id ?? link?.originId;
+  if (sourceId === undefined || sourceId === null) return null;
+  return graph?._nodes_by_id?.[sourceId] || graph?._nodes?.find((candidate) => String(candidate.id) === String(sourceId)) || null;
+}
+
+function getUpstreamImageNodeIds(node, graph = getGraph()) {
+  const upstreamIds = [];
+  for (const input of node?.inputs || []) {
+    if (input?.link === undefined || input?.link === null) continue;
+    const sourceNode = getLinkSourceNode(graph, input.link);
+    if (!sourceNode) continue;
+    const sourceType = getNodeTypeName(sourceNode);
+    if (sourceType === IMAGE_NODE_ID || sourceType.includes("Image") || sourceType.includes("图像")) {
+      upstreamIds.push(String(sourceNode.id));
+    }
+  }
+  return upstreamIds;
+}
+
+function getCandidateOutputIdsForNode(node, graph = getGraph()) {
+  const ids = [String(node.id)];
+  for (const upstreamId of getUpstreamImageNodeIds(node, graph)) {
+    if (!ids.includes(upstreamId)) ids.push(upstreamId);
+  }
+  return ids;
+}
+
+function getNodeOutputImages(outputs, node) {
+  for (const outputId of getCandidateOutputIdsForNode(node)) {
+    const output = outputs?.[String(outputId)] || outputs?.[outputId];
+    const images = output?.images || output?.gifs;
+    if (Array.isArray(images) && images.length) return images;
+  }
+  return null;
+}
+
+function getPreviewImagesFromPayload(payload) {
+  const images = payload?.images || payload?.gifs;
+  return Array.isArray(images) && images.length ? images : null;
+}
+
+function rememberNodePreviewImages(node, images) {
+  if (!node || !images?.length) return;
+  node.properties ||= {};
+  node.properties[PREVIEW_PROPERTY] = images;
+}
+
+function getStoredPreviewImages(node) {
+  const images = node?.properties?.[PREVIEW_PROPERTY];
+  return Array.isArray(images) && images.length ? images : null;
+}
+
+function getNodeOutputLocatorId(node) {
+  return String(node?.id ?? "");
+}
+
+function writeNativePreviewOutput(node, images) {
+  if (!node || !images?.length) return;
+  const locatorId = getNodeOutputLocatorId(node);
+  if (!locatorId) return;
+  app.nodeOutputs ||= {};
+  app.nodeOutputs[locatorId] = { ...(app.nodeOutputs[locatorId] || {}), images };
+}
+
+function applyNodePreviewImages(node, images) {
+  if (!node || !images?.length) return false;
+  writeNativePreviewOutput(node, images);
+  node.images = null;
+  node.imgs = null;
+  node.animatedImages = null;
+  delete node.__oaiBridgeRestoredImages;
+  delete node.__oaiBridgePreviewImageObjects;
+  node.onDrawBackground?.();
+  node.setDirtyCanvas?.(true, true);
+  return true;
+}
+
+function applyStoredNodePreview(node) {
+  const images = getStoredPreviewImages(node);
+  return images ? applyNodePreviewImages(node, images) : false;
+}
+
+function patchPreviewRestoreExecution(nodeType) {
+  if (!nodeType?.prototype || nodeType.prototype.__oaiBridgePreviewExecutionPatched) return;
+  const originalOnExecuted = nodeType.prototype.onExecuted;
+  const originalOnConfigure = nodeType.prototype.onConfigure;
+
+  nodeType.prototype.onExecuted = function oaiBridgePreviewOnExecuted(message, ...args) {
+    const result = originalOnExecuted?.apply(this, [message, ...args]);
+    const images = getPreviewImagesFromPayload(message);
+    if (images) {
+      rememberNodePreviewImages(this, images);
+      writeNativePreviewOutput(this, images);
+      app.graph?.setDirtyCanvas?.(true, true);
+      app.canvas?.setDirty?.(true, true);
+    }
+    return result;
+  };
+
+  nodeType.prototype.onConfigure = function oaiBridgePreviewOnConfigure(...args) {
+    const result = originalOnConfigure?.apply(this, args);
+    applyStoredNodePreview(this);
+    schedulePreviewRestore(300);
+    return result;
+  };
+
+  nodeType.prototype.__oaiBridgePreviewExecutionPatched = true;
+}
+
+async function restoreNodePreviewsFromHistory() {
+  if (previewRestoreInFlight) return;
+  const graph = getGraph();
+  const nodes = (graph?._nodes || []).filter(shouldRestoreNodePreview);
+  if (!nodes.length) return;
+
+  previewRestoreInFlight = true;
+  try {
+    let restored = false;
+    for (const node of nodes) {
+      restored = applyStoredNodePreview(node) || restored;
+    }
+
+    const missingNodes = nodes.filter((node) => !(Array.isArray(node.images) && node.images.length));
+    if (missingNodes.length) {
+      const outputs = await findLatestHistoryOutputs(missingNodes);
+      if (outputs) {
+        for (const node of missingNodes) {
+          const images = getNodeOutputImages(outputs, node);
+          if (images) {
+            rememberNodePreviewImages(node, images);
+            restored = applyNodePreviewImages(node, images) || restored;
+          }
+        }
+      }
+    }
+
+    if (restored) {
+      app.graph?.setDirtyCanvas?.(true, true);
+      app.canvas?.setDirty?.(true, true);
+    }
+  } finally {
+    previewRestoreInFlight = false;
+  }
+}
+
+function schedulePreviewRestore(delay = 250) {
+  const timer = setTimeout(() => {
+    previewRestoreTimers.delete(timer);
+    restoreNodePreviewsFromHistory();
+  }, delay);
+  previewRestoreTimers.add(timer);
+}
+
+function installPreviewRestoreHooks() {
+  schedulePreviewRestore(500);
+  schedulePreviewRestore(1500);
+  comfyApi.addEventListener?.("graphChanged", () => schedulePreviewRestore(300));
+  app?.api?.addEventListener?.("graphChanged", () => schedulePreviewRestore(300));
+}
+
+app.registerExtension?.({
+  name: "oai.bridge.preview-restore",
+  beforeRegisterNodeDef(nodeType, nodeData) {
+    if (isPreviewRestoreNodeDefinition(nodeType, nodeData)) patchPreviewRestoreExecution(nodeType);
+  },
+  nodeCreated(node) {
+    applyStoredNodePreview(node);
+    schedulePreviewRestore(300);
+    schedulePreviewRestore(1200);
+  },
+  loadedGraphNode(node) {
+    applyStoredNodePreview(node);
+    schedulePreviewRestore(300);
+    schedulePreviewRestore(1200);
+  },
+  afterConfigureGraph() {
+    schedulePreviewRestore(300);
+    schedulePreviewRestore(1200);
+    schedulePreviewRestore(2500);
+  },
+});
 function injectStyle() {
   if (document.querySelector("link[data-oai-bridge-style]")) return;
   const link = document.createElement("link");
@@ -592,14 +829,14 @@ async function showPanel() {
   nodesWrap.appendChild(hint);
 
   try {
-    const data = await api.get("/oai-bridge/config");
+    const data = await bridgeApi.get("/oai-bridge/config");
     token.placeholder = data.config?.has_token ? `${TEXT.tokenSaved}${data.config.token_masked}` : TEXT.tokenPlaceholder;
   } catch {
     status.textContent = TEXT.configReadFailed;
   }
 
   try {
-    const data = await api.get("/oai-bridge/nodes");
+    const data = await bridgeApi.get("/oai-bridge/nodes");
     nodesWrap.appendChild(renderNodeList(data.nodes || [], status));
   } catch {
     nodesWrap.appendChild(renderNodeList([], status));
@@ -613,20 +850,20 @@ async function showPanel() {
     button(TEXT.saveConfig, async () => {
       const body = {};
       if (token.value) body.token = token.value;
-      const data = await api.post("/oai-bridge/config", body);
+      const data = await bridgeApi.post("/oai-bridge/config", body);
       status.textContent = data.message || TEXT.configSaved;
     }),
     button(TEXT.testConnection, async () => {
-      const data = await api.post("/oai-bridge/test");
+      const data = await bridgeApi.post("/oai-bridge/test");
       status.textContent = data.message || TEXT.testDone;
     }),
     button(TEXT.refreshApps, async () => {
-      const data = await api.post("/oai-bridge/metadata/refresh");
+      const data = await bridgeApi.post("/oai-bridge/metadata/refresh");
       const meta = data.metadata || {};
       status.textContent = `${data.message || TEXT.refreshDone}\n${TEXT.updatedAt}${meta.updated_at || TEXT.none}\n${TEXT.appCount}${meta.apps?.length || 0}`;
     }),
     button(TEXT.cacheStatus, async () => {
-      const data = await api.get("/oai-bridge/metadata");
+      const data = await bridgeApi.get("/oai-bridge/metadata");
       const meta = data.metadata || {};
       status.textContent = `${TEXT.cacheSource}${meta.source || TEXT.unknown}\n${TEXT.updatedAt}${meta.updated_at || TEXT.none}\n${TEXT.appCount}${meta.apps?.length || 0}`;
     }),
@@ -664,14 +901,5 @@ function schedulePanelEntry() {
 }
 
 schedulePanelEntry();
-
-
-
-
-
-
-
-
-
-
+installPreviewRestoreHooks();
 

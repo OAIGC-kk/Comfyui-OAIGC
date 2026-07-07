@@ -45,8 +45,8 @@ class PanelEntryTests(unittest.TestCase):
         self.assertNotIn("base_url", js)
         self.assertNotIn("uploadUrl", js)
         self.assertNotIn("upload_url", js)
-        self.assertNotIn("API 地址", js)
-        self.assertNotIn("上传地址", js)
+        self.assertNotIn("\u0041\u0050\u0049 \u5730\u5740", js)
+        self.assertNotIn("\u4e0a\u4f20\u5730\u5740", js)
         self.assertIn("https://oaigc.cn", js)
         self.assertIn("tokenLink", js)
         self.assertIn("\\u83b7\\u53d6 API Token", js)
@@ -111,11 +111,51 @@ class PanelEntryTests(unittest.TestCase):
         self.assertIn("[\"AI\\u6263\\u56fe\"]: []", js)
         self.assertIn("IMAGE_FIELD.prompt", js)
 
+
+    def test_frontend_restores_saved_previews_from_history(self):
+        js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
+
+        self.assertIn("restoreNodePreviewsFromHistory", js)
+        self.assertIn("findLatestHistoryOutputs", js)
+        self.assertIn("/history", js)
+        self.assertIn("node.images = null", js)
+        self.assertIn("node.imgs = null", js)
+        self.assertIn("app.graph?.setDirtyCanvas", js)
+        self.assertIn("comfyApi.addEventListener?.(\"graphChanged\"", js)
+
+    def test_frontend_persists_native_preview_images_on_execution(self):
+        js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
+
+        self.assertIn("PREVIEW_PROPERTY", js)
+        self.assertIn("rememberNodePreviewImages", js)
+        self.assertIn("getStoredPreviewImages", js)
+        self.assertIn("patchPreviewRestoreExecution", js)
+        self.assertIn("onExecuted", js)
+        self.assertIn("oaiBridgePreviewOnConfigure", js)
+        self.assertIn("applyStoredNodePreview(this)", js)
+        self.assertIn("writeNativePreviewOutput", js)
+        self.assertNotIn("node.previewImages", js)
+        self.assertNotIn("ctx.drawImage", js)
+        self.assertNotIn("prototype.onDrawBackground", js)
+
+    def test_frontend_schedules_preview_restore_when_graph_loads(self):
+        js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
+
+        self.assertIn("oai.bridge.preview-restore", js)
+        self.assertIn("nodeCreated(node)", js)
+        self.assertIn("loadedGraphNode(node)", js)
+        self.assertIn("afterConfigureGraph()", js)
+        self.assertIn("schedulePreviewRestore(2500)", js)
+
+    def test_frontend_restores_save_image_preview_from_upstream_node(self):
+        js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
+
+        self.assertIn("getUpstreamImageNodeIds", js)
+        self.assertIn("getCandidateOutputIdsForNode", js)
+        self.assertIn("getLinkSourceNode", js)
+        self.assertIn("input?.link", js)
+        self.assertIn("outputs?.[String(outputId)]", js)
+
 if __name__ == "__main__":
     unittest.main()
-
-
-
-
-
 

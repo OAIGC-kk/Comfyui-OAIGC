@@ -96,3 +96,31 @@ async def upload_video_input(client, video, filename: str = "reference_video.mp4
 
 
 
+
+
+def save_video_bytes_to_output(url: str, filename_prefix: str = "OAI_Bridge") -> dict:
+    import os
+    import time
+
+    import folder_paths
+
+    output_dir = folder_paths.get_output_directory()
+    subfolder = "OAI_Bridge"
+    full_output_folder = os.path.join(output_dir, subfolder)
+    os.makedirs(full_output_folder, exist_ok=True)
+
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    filename = f"{filename_prefix}_{stamp}.mp4"
+    path = os.path.join(full_output_folder, filename)
+    with open(path, "wb") as out:
+        out.write(_download_bytes_sync(url))
+
+    return {"filename": filename, "subfolder": subfolder, "type": "output", "format": "video/mp4"}
+
+
+def _download_bytes_sync(url: str) -> bytes:
+    try:
+        with urlopen(url, timeout=300) as response:
+            return response.read()
+    except Exception as exc:
+        raise RuntimeError(f"下载结果失败：{exc}") from exc

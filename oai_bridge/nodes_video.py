@@ -1,11 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
 from comfy_api.latest import IO
 
 from .client import OAIClient
-from .media import download_video_url, upload_audio_input, upload_image_tensor, upload_video_input
+from .media import download_video_url, save_video_bytes_to_output, upload_audio_input, upload_image_tensor, upload_video_input
 from .metadata import load_app_options
 from .registry import app_label
 from .tasks import run_app
@@ -195,5 +195,6 @@ class OAIVideoNode(IO.ComfyNode):
             parameter = extra
 
         url = await run_app(app, parameter)
-        return IO.NodeOutput(await download_video_url(url))
+        saved_video = save_video_bytes_to_output(url)
+        return IO.NodeOutput(await download_video_url(url), ui={"images": [saved_video], "animated": (True,)})
 
