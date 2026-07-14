@@ -563,7 +563,7 @@ function hideWidget(widget) {
 function refreshNodeLayout(node) {
   if (node?.computeSize && node?.setSize) {
     const computedSize = node.computeSize();
-    const currentSize = Array.isArray(node.size) ? node.size : [0, 0];
+    const currentSize = node.size || [0, 0];
     node.setSize([
       Math.max(currentSize[0] || 0, computedSize[0] || 0),
       Math.max(currentSize[1] || 0, computedSize[1] || 0),

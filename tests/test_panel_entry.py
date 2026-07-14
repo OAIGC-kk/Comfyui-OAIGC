@@ -106,13 +106,14 @@ class PanelEntryTests(unittest.TestCase):
         self.assertIn("widget.hidden = true", js)
         self.assertIn("widget.disabled = true", js)
 
-    def test_widget_layout_refresh_preserves_user_resized_nodes(self):
+    def test_widget_layout_refresh_preserves_typed_array_node_sizes(self):
         js = Path("web/oai_bridge_panel.js").read_text(encoding="utf-8")
 
-        self.assertIn("const currentSize = Array.isArray(node.size) ? node.size : [0, 0];", js)
+        self.assertIn("const currentSize = node.size || [0, 0];", js)
         self.assertIn("node.setSize([", js)
         self.assertIn("Math.max(currentSize[0] || 0, computedSize[0] || 0)", js)
         self.assertIn("Math.max(currentSize[1] || 0, computedSize[1] || 0)", js)
+        self.assertNotIn("Array.isArray(node.size)", js)
         self.assertNotIn("node.setSize(node.computeSize())", js)
 
     def test_cutout_model_does_not_show_prompt_widget(self):
