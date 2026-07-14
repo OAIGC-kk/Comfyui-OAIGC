@@ -5,10 +5,10 @@ import time
 from typing import Any
 
 from .client import OAIAPIError, OAIClient
-from .config import load_config
+from .config import OPERATION_TIMEOUT_SECONDS, load_config
 
-IMAGE_TASK_POLL_TIMEOUT = 15 * 60
-VIDEO_TASK_POLL_TIMEOUT = 30 * 60
+IMAGE_TASK_POLL_TIMEOUT = OPERATION_TIMEOUT_SECONDS
+VIDEO_TASK_POLL_TIMEOUT = OPERATION_TIMEOUT_SECONDS
 
 
 def _extract_task_id(response: dict[str, Any]) -> str:

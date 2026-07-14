@@ -10,6 +10,7 @@ DATA_DIR = PLUGIN_ROOT / "oai_bridge_data"
 CONFIG_PATH = DATA_DIR / "config.json"
 HARDCODED_BASE_URL = "https://oaigc.cn/api"
 HARDCODED_UPLOAD_URL = "https://oaigc.cn/api/file/tool/upload"
+OPERATION_TIMEOUT_SECONDS = 20 * 60
 
 
 @dataclass
@@ -18,11 +19,12 @@ class OAIConfig:
     upload_url: str = HARDCODED_UPLOAD_URL
     token: str = ""
     poll_interval: float = 3.0
-    poll_timeout: float = 900.0
+    poll_timeout: float = OPERATION_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         self.base_url = HARDCODED_BASE_URL
         self.upload_url = HARDCODED_UPLOAD_URL
+        self.poll_timeout = OPERATION_TIMEOUT_SECONDS
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -50,24 +52,26 @@ def load_config() -> OAIConfig:
         return OAIConfig()
     cfg = OAIConfig()
     for key in asdict(cfg):
-        if key in {"base_url", "upload_url"}:
+        if key in {"base_url", "upload_url", "poll_timeout"}:
             continue
         if key in data:
             setattr(cfg, key, data[key])
     cfg.base_url = HARDCODED_BASE_URL
     cfg.upload_url = HARDCODED_UPLOAD_URL
+    cfg.poll_timeout = OPERATION_TIMEOUT_SECONDS
     return cfg
 
 
 def save_config(update: dict[str, Any]) -> OAIConfig:
     cfg = load_config()
     for key in asdict(cfg):
-        if key in {"base_url", "upload_url"}:
+        if key in {"base_url", "upload_url", "poll_timeout"}:
             continue
         if key in update:
             setattr(cfg, key, update[key])
     cfg.base_url = HARDCODED_BASE_URL
     cfg.upload_url = HARDCODED_UPLOAD_URL
+    cfg.poll_timeout = OPERATION_TIMEOUT_SECONDS
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(asdict(cfg), ensure_ascii=False, indent=2), encoding="utf-8")
     return cfg

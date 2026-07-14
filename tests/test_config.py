@@ -22,7 +22,7 @@ class ConfigTests(unittest.TestCase):
                 "has_token": True,
                 "token_masked": "abcd****wxyz",
                 "poll_interval": 3.0,
-                "poll_timeout": 900.0,
+                "poll_timeout": 1200,
             },
         )
 
@@ -68,7 +68,24 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded.upload_url, config.HARDCODED_UPLOAD_URL)
         self.assertEqual(loaded.token, "secret-token")
         self.assertEqual(loaded.poll_interval, 1.5)
-        self.assertEqual(loaded.poll_timeout, 900.0)
+        self.assertEqual(loaded.poll_timeout, 1200)
+
+    def test_load_config_normalizes_legacy_poll_timeout_to_twenty_minutes(self):
+        from oai_bridge import config
+
+        with tempfile.TemporaryDirectory() as tmp:
+            original_config_path = config.CONFIG_PATH
+            config.CONFIG_PATH = Path(tmp) / "config.json"
+            try:
+                config.CONFIG_PATH.write_text(
+                    '{"token":"secret-token","poll_timeout":900}',
+                    encoding="utf-8",
+                )
+                loaded = config.load_config()
+            finally:
+                config.CONFIG_PATH = original_config_path
+
+        self.assertEqual(loaded.poll_timeout, 1200)
 
 
 if __name__ == "__main__":

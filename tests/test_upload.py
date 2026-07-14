@@ -25,6 +25,7 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
 
         def fake_urlopen(request, timeout):
             captured["url"] = request.full_url
+            captured["timeout"] = timeout
             captured["headers"] = dict(request.header_items())
             captured["data"] = request.data
             return FakeUploadResponse()
@@ -36,6 +37,7 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(url, "https://tu.oaigc.cn/test.png")
         self.assertEqual(captured["url"], "https://oaigc.cn/api/file/tool/upload")
+        self.assertEqual(captured["timeout"], 1200)
         self.assertIn("multipart/form-data", captured["headers"]["Content-type"])
         self.assertIn(b'name="file"; filename="test.png"', captured["data"])
         self.assertIn(b"image-bytes", captured["data"])

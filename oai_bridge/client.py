@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .config import OAIConfig, load_config
+from .config import OPERATION_TIMEOUT_SECONDS, OAIConfig, load_config
 
 UNKNOWN_ERROR = "\u672a\u77e5\u9519\u8bef"
 
@@ -123,7 +123,11 @@ class OAIClient:
         body = json.dumps(payload_data, ensure_ascii=False).encode("utf-8") if method != "GET" else None
         request = Request(self._url(path), data=body, headers=self._headers(request_id), method=method)
         try:
-            with self._urlopen_with_retries(request, timeout=120, attempts=3 if retry else 1) as response:
+            with self._urlopen_with_retries(
+                request,
+                timeout=OPERATION_TIMEOUT_SECONDS,
+                attempts=3 if retry else 1,
+            ) as response:
                 raw = response.read().decode("utf-8")
         except HTTPError as exc:
             payload = _format_request_payload(payload_data)
@@ -213,7 +217,11 @@ class OAIClient:
             headers["Authorization"] = f"Bearer {self.config.token}"
         request = Request(self.config.upload_url, data=body, headers=headers, method="POST")
         try:
-            with self._urlopen_with_retries(request, timeout=300, attempts=3) as response:
+            with self._urlopen_with_retries(
+                request,
+                timeout=OPERATION_TIMEOUT_SECONDS,
+                attempts=3,
+            ) as response:
                 raw = response.read().decode("utf-8")
         except HTTPError as exc:
             raise OAIAPIError(f"\u4e0a\u4f20\u6587\u4ef6\u5931\u8d25\uff1a{_format_http_error(exc)}") from exc

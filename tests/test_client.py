@@ -18,6 +18,23 @@ class FakeJSONResponse:
 
 
 class ClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_request_json_uses_twenty_minute_timeout(self):
+        from oai_bridge.client import OAIClient
+        from oai_bridge.config import OAIConfig
+
+        captured = {}
+
+        def fake_urlopen(request, timeout, context=None):
+            captured["timeout"] = timeout
+            return FakeJSONResponse()
+
+        client = OAIClient(OAIConfig(token="secret"))
+
+        with patch("oai_bridge.client.urlopen", fake_urlopen):
+            await client.request_json("GET", "/v1/test")
+
+        self.assertEqual(captured["timeout"], 1200)
+
     async def test_request_json_retries_ssl_unexpected_eof(self):
         from oai_bridge.client import OAIClient
         from oai_bridge.config import OAIConfig

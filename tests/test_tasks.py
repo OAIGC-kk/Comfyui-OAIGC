@@ -82,7 +82,7 @@ class TaskRunnerTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(url, "https://example.test/result.png")
 
-    async def test_general_image_tasks_timeout_after_fifteen_minutes(self):
+    async def test_general_image_tasks_timeout_after_twenty_minutes(self):
         from oai_bridge import tasks
         from oai_bridge.client import OAIAPIError
 
@@ -92,7 +92,7 @@ class TaskRunnerTests(unittest.IsolatedAsyncioTestCase):
                 return {"code": 200, "data": {"status": "queued", "task_id": task_id, "result": ""}}
 
         client = PendingClient()
-        monotonic_values = iter([0.0, 899.0, 901.0])
+        monotonic_values = iter([0.0, 1199.0, 1201.0])
         with patch.object(tasks, "OAIClient", return_value=client):
             with patch.object(tasks.time, "monotonic", side_effect=lambda: next(monotonic_values)):
                 with patch.object(tasks.asyncio, "sleep", return_value=None):
@@ -102,7 +102,7 @@ class TaskRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("任务轮询超时", str(raised.exception))
         self.assertEqual(client.polls, 1)
 
-    async def test_seedance_video_tasks_timeout_after_thirty_minutes(self):
+    async def test_seedance_video_tasks_timeout_after_twenty_minutes(self):
         from oai_bridge import tasks
         from oai_bridge.client import OAIAPIError
 
@@ -112,7 +112,7 @@ class TaskRunnerTests(unittest.IsolatedAsyncioTestCase):
                 return {"code": 200, "data": {"status": "queued", "task_id": task_id}}
 
         client = PendingSeedanceClient()
-        monotonic_values = iter([0.0, 1799.0, 1801.0])
+        monotonic_values = iter([0.0, 1199.0, 1201.0])
         with patch.object(tasks, "OAIClient", return_value=client):
             with patch.object(tasks.time, "monotonic", side_effect=lambda: next(monotonic_values)):
                 with patch.object(tasks.asyncio, "sleep", return_value=None):

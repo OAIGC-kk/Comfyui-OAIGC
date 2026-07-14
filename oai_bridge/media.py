@@ -3,10 +3,12 @@
 from io import BytesIO
 from urllib.request import urlopen
 
+from .config import OPERATION_TIMEOUT_SECONDS
+
 
 async def _download_bytes(url: str) -> bytes:
     try:
-        with urlopen(url, timeout=300) as response:
+        with urlopen(url, timeout=OPERATION_TIMEOUT_SECONDS) as response:
             return response.read()
     except Exception as exc:
         raise RuntimeError(f"下载结果失败：{exc}") from exc
@@ -120,7 +122,7 @@ def save_video_bytes_to_output(url: str, filename_prefix: str = "OAI_Bridge") ->
 
 def _download_bytes_sync(url: str) -> bytes:
     try:
-        with urlopen(url, timeout=300) as response:
+        with urlopen(url, timeout=OPERATION_TIMEOUT_SECONDS) as response:
             return response.read()
     except Exception as exc:
         raise RuntimeError(f"下载结果失败：{exc}") from exc

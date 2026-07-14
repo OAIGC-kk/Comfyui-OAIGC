@@ -6,6 +6,31 @@ from unittest.mock import patch
 
 
 class MediaTests(unittest.TestCase):
+    def test_result_download_uses_twenty_minute_timeout(self):
+        from oai_bridge import media
+
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"result-bytes"
+
+        def fake_urlopen(url, timeout):
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with patch.object(media, "urlopen", fake_urlopen):
+            result = media._download_bytes_sync("https://example.test/result.bin")
+
+        self.assertEqual(result, b"result-bytes")
+        self.assertEqual(captured["timeout"], 1200)
+
     def test_download_image_url_preserves_rgba_alpha_channel(self):
         from PIL import Image
         from oai_bridge import media
